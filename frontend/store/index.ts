@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import type { 
-  PageStatus, 
-  RawDataResponse, 
-  NormalizedStationMeeting, 
+import type {
+  PageStatus,
+  RawDataResponse,
+  NormalizedStationMeeting,
   DataParseStats,
   FilterState,
 } from '@/types';
@@ -16,6 +16,7 @@ import {
   getMapSummary,
   setDataSource as setApiDataSource,
 } from '@/api';
+import type { DataSourceMode } from '@/api/config';
 
 export interface AppState {
   // 页面状态
@@ -90,8 +91,8 @@ export interface AppState {
   // DataHub 数据加载（从 DataHub sandbox API 获取）
   loadFromDataHub: () => Promise<void>;
   // 数据源类型
-  dataSource: 'mock' | 'api' | 'local' | 'datahub';
-  setDataSource: (source: 'mock' | 'api' | 'local' | 'datahub') => void;
+  dataSource: DataSourceMode;
+  setDataSource: (source: DataSourceMode) => void;
   
   // ========== M1R2: 图层显隐控制（已移除 line）==========
   layerVisibility: {
@@ -291,8 +292,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   
-  // ========== M0: API 数据源支持 ==========
-  dataSource: getApiConfig().source, // pre-MVP 基线：默认 local，可通过 VITE_DATA_SOURCE=datahub 切换
+  // ========== API 数据源支持 ==========
+  dataSource: getApiConfig().source, // 默认 local，可通过 VITE_DATA_SOURCE=datahub 切换
   setDataSource: (source) => {
     setApiDataSource(source);
     set({ dataSource: source });

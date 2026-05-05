@@ -12,7 +12,7 @@ vi.mock('@/store', () => ({
   useAppStore: vi.fn(),
 }));
 
-function mockStore(dataSource: 'local' | 'api' | 'datahub' = 'local') {
+function mockStore(dataSource: 'local' | 'legacy-api' | 'datahub' = 'local') {
   vi.mocked(useAppStore).mockReturnValue({
     filters: {
       workStatus: 'all',

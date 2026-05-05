@@ -30,9 +30,9 @@ interface RequestOptions {
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const config = getApiConfig();
   
-  // 如果是 mock 模式，返回空数据
-  if (config.source === 'mock') {
-    console.warn(`[API] Mock 模式，跳过请求: ${path}`);
+  // 如果是 local 模式，跳过请求
+  if (config.source === 'local') {
+    console.warn(`[API] Local 模式，跳过请求: ${path}`);
     return {} as T;
   }
   
@@ -92,8 +92,8 @@ export function post<T>(path: string, body?: any): Promise<T> {
 export async function uploadFile<T>(path: string, file: File): Promise<T> {
   const config = getApiConfig();
   
-  if (config.source === 'mock') {
-    console.warn(`[API] Mock 模式，跳过上传: ${path}`);
+  if (config.source === 'local') {
+    console.warn(`[API] Local 模式，跳过上传: ${path}`);
     return {} as T;
   }
   

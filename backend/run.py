@@ -11,16 +11,16 @@ if __name__ == "__main__":
     print(f"CORS 来源: {settings.CORS_ORIGINS}")
     print()
     print("API 文档:")
-    print("  - Swagger UI: http://localhost:8000/docs")
-    print("  - ReDoc: http://localhost:8000/redoc")
+    print("  - Swagger UI: http://localhost:8001/docs")
+    print("  - ReDoc: http://localhost:8001/redoc")
     print()
-    print("健康检查: http://localhost:8000/health")
+    print("健康检查: http://localhost:8001/health")
     print("=" * 60)
     print()
-    
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=8001,
         reload=settings.DEBUG,
     )

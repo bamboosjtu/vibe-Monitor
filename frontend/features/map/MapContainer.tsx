@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MAP_CONFIG, OSM_STYLE } from '@/constants/map';
@@ -7,53 +7,6 @@ import { recordsToGeoJSON } from '@/lib/geojson';
 import { useAppStore } from '@/store';
 import type { NormalizedStationMeeting } from '@/types';
 import { getSkeleton } from '@/api/mapApi';
-
-/**
- * M1R2-hotfix: 全局 map 实例引用（用于 DebugOverlay 查询）
- * 验证通过后可删除
- */
-let _globalMapInstance: maplibregl.Map | null = null;
-
-export function getMapInstance(): maplibregl.Map | null {
-  return _globalMapInstance;
-}
-
-/**
- * M1R2-hotfix: 自检命令（在浏览器控制台调用 window.__checkMapSources()）
- * 验证通过后可删除
- */
-if (typeof window !== 'undefined') {
-  (window as any).__checkMapSources = () => {
-    const map = getMapInstance();
-    if (!map) {
-      console.log('[SelfCheck] Map instance is null');
-      return;
-    }
-
-    const style = map.getStyle();
-    console.log('[SelfCheck] === Sources ===');
-    console.log('Source keys:', Object.keys(style.sources || {}));
-    
-    console.log('[SelfCheck] === Layers (workpoint/tower/station) ===');
-    const layers = style.layers || [];
-    layers
-      .filter(l => l.id.includes('station') || l.id.includes('tower') || l.id.includes('point'))
-      .forEach(l => {
-        console.log(`  layer: ${l.id}, source: ${(l as any).source}, type: ${l.type}`);
-      });
-
-    console.log('[SelfCheck] === Feature Counts ===');
-    ['workpoint-data', 'tower-data', 'station-point-data', 'selected-point'].forEach(id => {
-      const source = map.getSource(id);
-      if (!source) {
-        console.log(`  ${id}: MISSING`);
-      } else {
-        const count = (source as any)?._data?.features?.length ?? (source as any)?._geojson?.data?.features?.length ?? 'unknown';
-        console.log(`  ${id}: ${count}`);
-      }
-    });
-  };
-}
 
 export function MapContainer() {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -76,8 +29,6 @@ export function MapContainer() {
       minZoom: MAP_CONFIG.minZoom,
       maxZoom: MAP_CONFIG.maxZoom,
     });
-
-    _globalMapInstance = map.current;
 
     // 添加导航控件
     map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -156,72 +107,6 @@ export function MapContainer() {
   return (
     <div className="w-full h-full rounded-lg overflow-hidden border border-gray-200 relative">
       <div ref={mapContainer} className="w-full h-full" />
-      <DebugOverlay />
-    </div>
-  );
-}
-
-/**
- * M1R2-hotfix: 调试覆盖层 - 显示图层 feature 数量
- * 验证通过后可删除
- */
-function DebugOverlay() {
-  const { filteredData } = useAppStore();
-  const [layerCounts, setLayerCounts] = useState({
-    workPoint: 0,
-    tower: 0,
-    station: 0,
-  });
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const map = getMapInstance();
-      if (!map) {
-        console.log('[DebugOverlay] map instance is null');
-        return;
-      }
-
-      const wpSource = map.getSource('workpoint-data');
-      const towerSource = map.getSource('tower-data');
-      const stationSource = map.getSource('station-point-data');
-
-      console.log('[DebugOverlay] Sources:', {
-        wpSource: wpSource ? 'exists' : 'MISSING',
-        towerSource: towerSource ? 'exists' : 'MISSING',
-        stationSource: stationSource ? 'exists' : 'MISSING',
-      });
-
-      // 尝试多种属性名获取 feature 数量
-      const getFeatureCount = (source: any, label: string) => {
-        if (!source) {
-          console.log(`[DebugOverlay] ${label} source is MISSING`);
-          return 0;
-        }
-        const count = source._data?.features?.length ?? source._geojson?.data?.features?.length ?? 0;
-        console.log(`[DebugOverlay] ${label}: source._data?.features?.length = ${source._data?.features?.length}, source._geojson?.data?.features?.length = ${source._geojson?.data?.features?.length}, final = ${count}`);
-        return count;
-      };
-
-      setLayerCounts({
-        workPoint: getFeatureCount(wpSource, 'WorkPoint'),
-        tower: getFeatureCount(towerSource, 'Tower'),
-        station: getFeatureCount(stationSource, 'Station'),
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div
-      className="absolute top-2 right-2 bg-black/80 text-green-400 font-mono text-xs p-2 rounded z-10 pointer-events-none select-none"
-      style={{ fontFamily: 'monospace' }}
-    >
-      <div>[M1R2 Debug]</div>
-      <div>WorkPoint features: {layerCounts.workPoint}</div>
-      <div>Tower features: {layerCounts.tower}</div>
-      <div>Station features: {layerCounts.station}</div>
-      <div>filteredData: {filteredData.length}</div>
     </div>
   );
 }

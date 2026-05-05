@@ -11,12 +11,10 @@ export const SANDBOX_SKELETON_LIMIT = Number(
   import.meta.env.VITE_SANDBOX_SKELETON_LIMIT ?? '10000',
 )
 
-export type DataSourceType = 'mock' | 'api' | 'local' | 'datahub';
-
 /** API 配置 */
 export interface ApiConfig {
   /** 数据源类型 */
-  source: DataSourceType;
+  source: DataSourceMode;
   /** API 基础地址 */
   baseUrl: string;
   /** DataHub API 基础地址 */
@@ -25,16 +23,15 @@ export interface ApiConfig {
   timeout: number;
 }
 
-function getEnvDataSource(): DataSourceType {
-  const source = import.meta.env.VITE_DATA_SOURCE as DataSourceType | undefined;
-  return source && ['mock', 'api', 'local', 'datahub'].includes(source)
+function getEnvDataSource(): DataSourceMode {
+  const source = import.meta.env.VITE_DATA_SOURCE as DataSourceMode | undefined;
+  return source && ['datahub', 'local', 'legacy-api'].includes(source)
     ? source
     : 'local';
 }
 
 export const DATAHUB_API_BASE_URL =
   import.meta.env.VITE_DATAHUB_BASE_URL ||
-  import.meta.env.VITE_DATAHUB_API_BASE_URL ||
   'http://localhost:8000';
 
 /** 默认配置 */
@@ -58,6 +55,6 @@ export function setApiConfig(config: Partial<ApiConfig>): void {
 }
 
 /** 切换数据源 */
-export function setDataSource(source: DataSourceType): void {
+export function setDataSource(source: DataSourceMode): void {
   currentConfig.source = source;
 }

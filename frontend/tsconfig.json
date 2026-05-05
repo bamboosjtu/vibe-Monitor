@@ -23,7 +23,6 @@
   "include": [
     "api",
     "app",
-    "components",
     "constants",
     "features",
     "lib",

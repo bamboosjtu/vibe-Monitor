@@ -53,9 +53,9 @@ export function useDataLoader() {
       startLoading();
 
       try {
-        // M0: 根据数据源决定加载方式
-        if (dataSource === 'api') {
-          // 从 API 加载数据
+        // 根据数据源决定加载方式
+        if (dataSource === 'legacy-api') {
+          // 从 legacy backend API 加载数据
           await loadFromApi();
           setIsInitialLoading(false);
           return;
