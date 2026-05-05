@@ -35,18 +35,23 @@ const LAYER_OPTIONS: { key: LayerKey; label: string; color: string }[] = [
 ];
 
 export function FilterPanel() {
-  const { filters, setFilters, resetFilters, filteredData, normalizedData, layerVisibility, setLayerVisibility } = useAppStore();
+  const { filters, setFilters, resetFilters, filteredData, normalizedData, layerVisibility, setLayerVisibility, dataSource } = useAppStore();
   
   // M1 Round2: 获取 unresolved 统计
   const [unresolvedCount, setUnresolvedCount] = useState<number | null>(null);
   
   useEffect(() => {
+    if (dataSource === 'datahub') {
+      setUnresolvedCount(null);
+      return;
+    }
+
     getBootstrap().then(data => {
       setUnresolvedCount(data.unresolved_year_progress_count ?? null);
     }).catch(() => {
       setUnresolvedCount(null);
     });
-  }, []);
+  }, [dataSource]);
 
   const handleWorkStatusChange = (value: WorkStatus | 'all') => {
     setFilters({ workStatus: value });

@@ -1,9 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useAppStore } from './index';
 import type { RawDataResponse, DataParseStats } from '@/types';
+import { setDataSource as setApiDataSource } from '@/api/config';
 
 describe('App Store', () => {
   beforeEach(() => {
+    setApiDataSource('local');
+    vi.unstubAllGlobals();
     // 重置 store 状态
     useAppStore.setState({
       pageStatus: 'idle',
@@ -23,7 +26,12 @@ describe('App Store', () => {
       isPlaying: false,
       playSpeed: 1,
       error: null,
+      dataSource: 'local',
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   describe('initial state', () => {
@@ -192,6 +200,101 @@ describe('App Store', () => {
 
       const state = useAppStore.getState();
       expect(state.error).toBeNull();
+    });
+  });
+
+  describe('datahub mode', () => {
+    it('should load dates and latest work points from DataHub', async () => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/v1/sandbox/dates')) {
+          return new Response(JSON.stringify({
+            dates: ['2026-05-03', '2026-05-04'],
+            latest_date: '2026-05-04',
+            count: 2,
+          }));
+        }
+        if (url.endsWith('/api/v1/sandbox/map/summary?date=2026-05-04')) {
+          return new Response(JSON.stringify({
+            meta: {
+              date: '2026-05-04',
+              limit: 10000,
+              work_points_count: 1,
+              truncated: false,
+            },
+            work_points: [
+              {
+                id: 'dcp:work_point:2026-05-04:meeting-001',
+                project_name: '湖南作业点',
+                longitude: 112.93,
+                latitude: 28.22,
+                person_count: 12,
+                risk_level: '2',
+                work_status: 'working',
+                voltage_level: '500kV',
+                city: '长沙',
+                work_date: '2026-05-04',
+                raw: { should_not_leak: true },
+              },
+            ],
+          }));
+        }
+        throw new Error(`unexpected url: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { setDataSource, loadFromDataHub } = useAppStore.getState();
+      setDataSource('datahub');
+      await loadFromDataHub();
+
+      const state = useAppStore.getState();
+      expect(state.availableDates).toEqual(['2026-05-03', '2026-05-04']);
+      expect(state.currentDate).toBe('2026-05-04');
+      expect(state.normalizedData).toHaveLength(1);
+      expect(state.normalizedData[0].projectName).toBe('湖南作业点');
+      expect(state.normalizedData[0].riskLevel).toBe(2);
+      expect('raw' in state.normalizedData[0]).toBe(false);
+    });
+
+    it('should reload work points for selected DataHub date', async () => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/v1/sandbox/map/summary?date=2026-05-03')) {
+          return new Response(JSON.stringify({
+            meta: {
+              date: '2026-05-03',
+              limit: 10000,
+              work_points_count: 1,
+              truncated: false,
+            },
+            work_points: [
+              {
+                id: 'dcp:work_point:2026-05-03:meeting-002',
+                project_name: '三号作业点',
+                longitude: 112.91,
+                latitude: 28.21,
+                person_count: 8,
+                risk_level: '3',
+                work_status: 'paused',
+                voltage_level: '220kV',
+                city: '株洲',
+                work_date: '2026-05-03',
+              },
+            ],
+          }));
+        }
+        throw new Error(`unexpected url: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { setDataSource, loadDataByDate } = useAppStore.getState();
+      setDataSource('datahub');
+      await loadDataByDate('2026-05-03');
+
+      const state = useAppStore.getState();
+      expect(state.currentDate).toBe('2026-05-03');
+      expect(state.normalizedData[0].projectName).toBe('三号作业点');
+      expect(state.normalizedData[0].riskLevel).toBe(3);
     });
   });
 });

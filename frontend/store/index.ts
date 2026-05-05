@@ -7,7 +7,15 @@ import type {
   FilterState,
 } from '@/types';
 import { applyFilters, DEFAULT_FILTER_STATE } from '@/lib/filter';
-import { getMapSummary, adaptMapSummary } from '@/api';
+import {
+  adaptDataHubMapSummary,
+  adaptMapSummary,
+  fetchDataHubDates,
+  fetchDataHubMapSummary,
+  getApiConfig,
+  getMapSummary,
+  setDataSource as setApiDataSource,
+} from '@/api';
 
 export interface AppState {
   // 页面状态
@@ -79,9 +87,11 @@ export interface AppState {
   // ========== M0: API 数据源支持 ==========
   // API 数据加载（从后端 API 获取）
   loadFromApi: () => Promise<void>;
+  // DataHub 数据加载（从 DataHub sandbox API 获取）
+  loadFromDataHub: () => Promise<void>;
   // 数据源类型
-  dataSource: 'mock' | 'api' | 'local';
-  setDataSource: (source: 'mock' | 'api' | 'local') => void;
+  dataSource: 'mock' | 'api' | 'local' | 'datahub';
+  setDataSource: (source: 'mock' | 'api' | 'local' | 'datahub') => void;
   
   // ========== M1R2: 图层显隐控制（已移除 line）==========
   layerVisibility: {
@@ -233,13 +243,36 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   // 按日期加载数据
   loadDataByDate: async (date: string, isInitialLoad = false) => {
-    const { loadSuccess, loadError } = get();
+    const { dataSource, loadSuccess, loadError } = get();
 
     // 日期切换时不再设置全局 loading 状态，避免触发整页重渲染
     // 改为在 Timeline 组件中通过 isLoading 状态显示局部 loading
     // 保持 pageStatus 为 'ready'，确保 UI 骨架不闪
 
     try {
+      if (dataSource === 'datahub') {
+        const summary = await fetchDataHubMapSummary(date);
+        const normalizedData = adaptDataHubMapSummary(summary);
+
+        loadSuccess({
+          rawData: null as any,
+          normalizedData,
+          stats: {
+            totalRawRecords: summary.work_points.length,
+            validCoordinateRecords: normalizedData.length,
+            filteredRecords: summary.work_points.length - normalizedData.length,
+            filterReasons: {
+              emptyCoordinates: 0,
+              invalidCoordinates: summary.work_points.length - normalizedData.length,
+              outOfBounds: 0,
+              zeroCoordinates: 0,
+            },
+          },
+          date: summary.meta.date ?? date,
+        });
+        return;
+      }
+
       // 动态导入避免循环依赖
       const { loadAndParseByDate } = await import('@/lib/dateDataLoader');
       const result = await loadAndParseByDate(date);
@@ -259,8 +292,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   
   // ========== M0: API 数据源支持 ==========
-  dataSource: 'local', // pre-MVP 基线：使用本地 JSON 模式
-  setDataSource: (source) => set({ dataSource: source }),
+  dataSource: getApiConfig().source, // pre-MVP 基线：默认 local，可通过 VITE_DATA_SOURCE=datahub 切换
+  setDataSource: (source) => {
+    setApiDataSource(source);
+    set({ dataSource: source });
+  },
   
   loadFromApi: async () => {
     const { loadSuccess, loadError, startLoading, setAvailableDates, setCurrentDate } = get();
@@ -308,6 +344,47 @@ export const useAppStore = create<AppState>((set, get) => ({
       const errorMessage = err instanceof Error ? err.message : 'API 数据加载失败';
       loadError(errorMessage);
       console.error('[API Load Error]', err);
+    }
+  },
+
+  loadFromDataHub: async () => {
+    const { loadSuccess, loadError, startLoading, setAvailableDates, setCurrentDate } = get();
+
+    startLoading();
+
+    try {
+      const datesResponse = await fetchDataHubDates();
+      const dates = [...datesResponse.dates].sort();
+      setAvailableDates(dates);
+
+      const selectedDate = datesResponse.latest_date ?? dates[dates.length - 1] ?? null;
+      if (selectedDate) {
+        setCurrentDate(selectedDate);
+      }
+
+      const summary = await fetchDataHubMapSummary(selectedDate ?? undefined);
+      const normalizedData = adaptDataHubMapSummary(summary);
+
+      loadSuccess({
+        rawData: null as any,
+        normalizedData,
+        stats: {
+          totalRawRecords: summary.work_points.length,
+          validCoordinateRecords: normalizedData.length,
+          filteredRecords: summary.work_points.length - normalizedData.length,
+          filterReasons: {
+            emptyCoordinates: 0,
+            invalidCoordinates: summary.work_points.length - normalizedData.length,
+            outOfBounds: 0,
+            zeroCoordinates: 0,
+          },
+        },
+        date: summary.meta.date ?? selectedDate ?? undefined,
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'DataHub 数据加载失败';
+      loadError(errorMessage);
+      console.error('[DataHub Load Error]', err);
     }
   },
   

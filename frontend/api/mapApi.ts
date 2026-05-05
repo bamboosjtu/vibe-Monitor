@@ -6,6 +6,9 @@
 
 import { get } from './client';
 import { uploadFile } from './client';
+import { adaptDataHubSkeleton } from './adapter';
+import { getApiConfig } from './config';
+import { fetchDataHubMapSkeleton } from './datahubApi';
 
 // ==================== 数据类型定义 ====================
 
@@ -132,5 +135,8 @@ export interface SkeletonResponse {
  * 获取骨架地图数据
  */
 export function getSkeleton(): Promise<SkeletonResponse> {
+  if (getApiConfig().source === 'datahub') {
+    return fetchDataHubMapSkeleton().then(adaptDataHubSkeleton);
+  }
   return get<SkeletonResponse>('/api/map/skeleton');
 }

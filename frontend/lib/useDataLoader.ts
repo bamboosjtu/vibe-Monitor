@@ -28,6 +28,7 @@ export function useDataLoader() {
     setCurrentDate,
     dataSource,
     loadFromApi,
+    loadFromDataHub,
   } = useAppStore();
 
   // 用于区分首屏初始化和日期切换
@@ -56,6 +57,13 @@ export function useDataLoader() {
         if (dataSource === 'api') {
           // 从 API 加载数据
           await loadFromApi();
+          setIsInitialLoading(false);
+          return;
+        }
+
+        if (dataSource === 'datahub') {
+          // 从 DataHub sandbox API 加载数据
+          await loadFromDataHub();
           setIsInitialLoading(false);
           return;
         }
@@ -95,7 +103,7 @@ export function useDataLoader() {
     };
 
     loadInitialData();
-  }, [pageStatus, startLoading, loadSuccess, loadError, setAvailableDates, setCurrentDate, dataSource, loadFromApi]);
+  }, [pageStatus, startLoading, loadSuccess, loadError, setAvailableDates, setCurrentDate, dataSource, loadFromApi, loadFromDataHub]);
 
   return { 
     pageStatus,
