@@ -11,16 +11,18 @@ if __name__ == "__main__":
     print(f"CORS 来源: {settings.CORS_ORIGINS}")
     print()
     print("API 文档:")
-    print("  - Swagger UI: http://localhost:8001/docs")
-    print("  - ReDoc: http://localhost:8001/redoc")
+    print(f"  - Swagger UI: http://{settings.MONITOR_BACKEND_HOST}:{settings.MONITOR_BACKEND_PORT}/docs")
+    print(f"  - ReDoc: http://{settings.MONITOR_BACKEND_HOST}:{settings.MONITOR_BACKEND_PORT}/redoc")
     print()
-    print("健康检查: http://localhost:8001/health")
+    print(f"DataHub: {settings.DATAHUB_BASE_URL}")
+    print(f"缓存库: {settings.MONITOR_CACHE_DB}")
+    print(f"健康检查: http://{settings.MONITOR_BACKEND_HOST}:{settings.MONITOR_BACKEND_PORT}/health")
     print("=" * 60)
     print()
 
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
-        port=8001,
+        host=settings.MONITOR_BACKEND_HOST,
+        port=settings.MONITOR_BACKEND_PORT,
         reload=settings.DEBUG,
     )

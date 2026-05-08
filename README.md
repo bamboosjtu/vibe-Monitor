@@ -1,6 +1,6 @@
 # vibe-Monitor
 
-`vibe-Monitor` 是数字沙盘消费端。当前 MVP 的主数据源是 `vibe-DataCollectorHub` 提供的 sandbox API，前端保留 local/mock JSON 模式作为演示和开发 fallback。
+`vibe-Monitor` 是数字沙盘消费端。当前推荐主链路是 `Monitor backend BFF -> DataHub`，前端仍保留 `datahub` 调试模式和 local/mock fallback。
 
 ## 当前定位
 
@@ -18,6 +18,7 @@ vibe-downloader
 - 时间轴日期切换。
 - 筛选、统计、详情展示。
 - 将 DataHub sandbox DTO 转成前端 view model。
+- 在 backend 构建 Monitor 专属 read model / cache。
 
 `vibe-Monitor` 不负责：
 
@@ -44,15 +45,28 @@ vibe-downloader
 
 ## 数据源模式
 
-前端支持三类模式：
+前端支持四类模式：
 
 | 模式 | 环境变量 | 用途 |
 | --- | --- | --- |
+| `monitor_backend` | `VITE_DATA_SOURCE=monitor_backend` | 推荐默认模式，调用 Monitor backend BFF/cache |
 | `datahub` | `VITE_DATA_SOURCE=datahub` | 当前主链路，调用 DataHub sandbox API |
 | `local` | `VITE_DATA_SOURCE=local` | 本地 JSON fallback / demo |
 | `api` / `legacy-api` | 旧 backend API | 兼容旧流程，不作为当前主链路 |
 
-DataHub mode 使用：
+Monitor backend mode 使用：
+
+```text
+GET /api/health
+GET /api/map/dates
+GET /api/map/summary?date=YYYY-MM-DD
+GET /api/map/skeleton
+GET /api/cache/status
+POST /api/cache/refresh
+POST /api/cache/clear
+```
+
+DataHub debug mode 使用：
 
 ```text
 GET /api/v1/sandbox/dates
@@ -62,19 +76,47 @@ GET /api/v1/sandbox/map/skeleton
 
 ## 快速启动
 
-### DataHub 模式
+### 推荐：Monitor backend 模式
 
 先启动 `vibe-DataCollectorHub`：
 
 ```powershell
-cd C:\Users\theTruth\Documents\projects\vibe-work\vibe-DataCollectorHub
+cd D:\vibe-coding\vibe-workspace\vibe-DataCollectorHub
+uv run run.py
+```
+
+再启动 Monitor backend：
+
+```powershell
+cd D:\vibe-coding\vibe-workspace\vibe-Monitor\backend
+uv sync --dev
+uv run python run.py
+```
+
+最后启动 frontend：
+
+```powershell
+cd D:\vibe-coding\vibe-workspace\vibe-Monitor\frontend
+
+$env:VITE_DATA_SOURCE = "monitor_backend"
+$env:VITE_MONITOR_BACKEND_URL = "http://localhost:8001"
+$env:VITE_DATAHUB_BASE_URL = "http://localhost:8000"
+npm run dev
+```
+
+### DataHub 调试模式
+
+先启动 `vibe-DataCollectorHub`：
+
+```powershell
+cd D:\vibe-coding\vibe-workspace\vibe-DataCollectorHub
 uv run run.py
 ```
 
 启动 Monitor：
 
 ```powershell
-cd C:\Users\theTruth\Documents\projects\vibe-work\vibe-Monitor\frontend
+cd D:\vibe-coding\vibe-workspace\vibe-Monitor\frontend
 
 $env:VITE_DATA_SOURCE = "datahub"
 $env:VITE_DATAHUB_BASE_URL = "http://localhost:8000"
@@ -84,7 +126,7 @@ npm run dev
 ### Local fallback
 
 ```powershell
-cd C:\Users\theTruth\Documents\projects\vibe-work\vibe-Monitor\frontend
+cd D:\vibe-coding\vibe-workspace\vibe-Monitor\frontend
 
 $env:VITE_DATA_SOURCE = "local"
 npm run dev
@@ -92,9 +134,10 @@ npm run dev
 
 ## backend 保留策略
 
-`backend/` 不删除。当前它不是第一版 DataHub 联调主链路，但后续仍可能作为 BFF / 应用处理层存在，用于：
+`backend/` 不删除。当前它已经开始承担 BFF / 应用处理层职责，用于：
 
 - 对 DataHub sandbox / canonical 数据做 Monitor 专属聚合。
+- 本地缓存 skeleton / dates / summary / health。
 - 承载基建 online 的应用层逻辑。
 - 提供权限、会话、用户操作、工单、履历等消费侧能力。
 
@@ -119,7 +162,10 @@ npm run dev
 ## 验证命令
 
 ```powershell
-cd C:\Users\theTruth\Documents\projects\vibe-work\vibe-Monitor\frontend
+cd D:\vibe-coding\vibe-workspace\vibe-Monitor\backend
+uv run pytest tests\test_monitor_backend_cache.py
+
+cd D:\vibe-coding\vibe-workspace\vibe-Monitor\frontend
 npm run test:run
 npm run build
 ```

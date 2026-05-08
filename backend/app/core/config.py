@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     
     # 数据库配置
     DATABASE_URL: str = "sqlite:///./data/sandbox.db"
+    MONITOR_CACHE_DB: str = "./data/monitor_cache.db"
+
+    # Backend / BFF 配置
+    MONITOR_BACKEND_HOST: str = "127.0.0.1"
+    MONITOR_BACKEND_PORT: int = 8001
+    DATAHUB_BASE_URL: str = "http://127.0.0.1:8000"
+    DATAHUB_TIMEOUT_SECONDS: int = 10
+    MONITOR_CACHE_TTL_SECONDS: int = 300
     
     # CORS 配置
     CORS_ORIGINS: List[str] = [
@@ -47,3 +55,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 DATABASE_PATH = DATA_DIR / "sandbox.db"
 if settings.DATABASE_URL.startswith("sqlite:///./"):
     settings.DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+
+CACHE_DB_PATH = DATA_DIR / "monitor_cache.db"
+if settings.MONITOR_CACHE_DB.startswith("./"):
+    settings.MONITOR_CACHE_DB = str(BACKEND_DIR / settings.MONITOR_CACHE_DB[2:])

@@ -12,6 +12,8 @@ import {
   adaptMapSummary,
   fetchDataHubDates,
   fetchDataHubMapSummary,
+  fetchMonitorBackendDates,
+  fetchMonitorBackendMapSummary,
   getApiConfig,
   getMapSummary,
   setDataSource as setApiDataSource,
@@ -251,25 +253,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 保持 pageStatus 为 'ready'，确保 UI 骨架不闪
 
     try {
-      if (dataSource === 'datahub') {
-        const summary = await fetchDataHubMapSummary(date);
-        const normalizedData = adaptDataHubMapSummary(summary);
+      if (dataSource === 'datahub' || dataSource === 'monitor_backend') {
+        const remoteSummary = dataSource === 'monitor_backend'
+          ? await fetchMonitorBackendMapSummary(date)
+          : await fetchDataHubMapSummary(date);
+        const normalizedData = adaptDataHubMapSummary(remoteSummary);
 
         loadSuccess({
           rawData: null as any,
           normalizedData,
           stats: {
-            totalRawRecords: summary.work_points.length,
+            totalRawRecords: remoteSummary.work_points.length,
             validCoordinateRecords: normalizedData.length,
-            filteredRecords: summary.work_points.length - normalizedData.length,
+            filteredRecords: remoteSummary.work_points.length - normalizedData.length,
             filterReasons: {
               emptyCoordinates: 0,
-              invalidCoordinates: summary.work_points.length - normalizedData.length,
+              invalidCoordinates: remoteSummary.work_points.length - normalizedData.length,
               outOfBounds: 0,
               zeroCoordinates: 0,
             },
           },
-          date: summary.meta.date ?? date,
+          date: remoteSummary.meta.date ?? date,
         });
         return;
       }
@@ -293,7 +297,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   
   // ========== API 数据源支持 ==========
-  dataSource: getApiConfig().source, // 默认 local，可通过 VITE_DATA_SOURCE=datahub 切换
+  dataSource: getApiConfig().source,
   setDataSource: (source) => {
     setApiDataSource(source);
     set({ dataSource: source });
@@ -354,16 +358,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     startLoading();
 
     try {
-      const datesResponse = await fetchDataHubDates();
-      const dates = [...datesResponse.dates].sort();
+      const remoteDates =
+        get().dataSource === 'monitor_backend'
+          ? await fetchMonitorBackendDates()
+          : await fetchDataHubDates();
+      const remoteSummaryFetcher =
+        get().dataSource === 'monitor_backend'
+          ? fetchMonitorBackendMapSummary
+          : fetchDataHubMapSummary;
+      const dates = [...remoteDates.dates].sort();
       setAvailableDates(dates);
 
-      const selectedDate = datesResponse.latest_date ?? dates[dates.length - 1] ?? null;
+      const selectedDate = remoteDates.latest_date ?? dates[dates.length - 1] ?? null;
       if (selectedDate) {
         setCurrentDate(selectedDate);
       }
 
-      const summary = await fetchDataHubMapSummary(selectedDate ?? undefined);
+      const summary = await remoteSummaryFetcher(selectedDate ?? undefined);
       const normalizedData = adaptDataHubMapSummary(summary);
 
       loadSuccess({

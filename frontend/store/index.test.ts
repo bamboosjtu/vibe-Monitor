@@ -297,4 +297,81 @@ describe('App Store', () => {
       expect(state.normalizedData[0].riskLevel).toBe(3);
     });
   });
+
+  describe('monitor backend mode', () => {
+    it('should load dates and latest work points from monitor backend', async () => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/map/dates')) {
+          return new Response(JSON.stringify({
+            code: 0,
+            message: 'success',
+            data: {
+              dates: ['2026-05-03', '2026-05-04'],
+              latest_date: '2026-05-04',
+              count: 2,
+              cached: true,
+              stale: false,
+              source_watermark: 'wm-dates',
+              refreshed_at: '2026-05-08T08:00:00',
+            },
+          }));
+        }
+        if (url.endsWith('/api/map/summary?date=2026-05-04')) {
+          return new Response(JSON.stringify({
+            code: 0,
+            message: 'success',
+            data: {
+              date: '2026-05-04',
+              summary: {
+                date: '2026-05-04',
+                limit: 10000,
+                work_points_count: 1,
+                truncated: false,
+              },
+              meta: {
+                date: '2026-05-04',
+                limit: 10000,
+                work_points_count: 1,
+                truncated: false,
+              },
+              work_points: [
+                {
+                  id: 'dcp:work_point:2026-05-04:meeting-003',
+                  project_name: '缓存作业点',
+                  longitude: 112.95,
+                  latitude: 28.25,
+                  person_count: 6,
+                  risk_level: '4',
+                  work_status: 'finished',
+                  voltage_level: '110kV',
+                  city: '湘潭',
+                  work_date: '2026-05-04',
+                },
+              ],
+              total_points: 1,
+              data: [],
+              cached: true,
+              stale: false,
+              source_watermark: 'wm-summary',
+              refreshed_at: '2026-05-08T08:00:01',
+            },
+          }));
+        }
+        throw new Error(`unexpected url: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { setDataSource, loadFromDataHub } = useAppStore.getState();
+      setDataSource('monitor_backend');
+      await loadFromDataHub();
+
+      const state = useAppStore.getState();
+      expect(state.availableDates).toEqual(['2026-05-03', '2026-05-04']);
+      expect(state.currentDate).toBe('2026-05-04');
+      expect(state.normalizedData).toHaveLength(1);
+      expect(state.normalizedData[0].projectName).toBe('缓存作业点');
+      expect(state.normalizedData[0].riskLevel).toBe(4);
+    });
+  });
 });

@@ -61,8 +61,8 @@ export function useDataLoader() {
           return;
         }
 
-        if (dataSource === 'datahub') {
-          // 从 DataHub sandbox API 加载数据
+        if (dataSource === 'datahub' || dataSource === 'monitor_backend') {
+          // 从 DataHub / Monitor backend 加载数据
           await loadFromDataHub();
           setIsInitialLoading(false);
           return;

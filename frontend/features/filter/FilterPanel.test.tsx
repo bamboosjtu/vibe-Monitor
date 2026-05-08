@@ -12,7 +12,7 @@ vi.mock('@/store', () => ({
   useAppStore: vi.fn(),
 }));
 
-function mockStore(dataSource: 'local' | 'legacy-api' | 'datahub' = 'local') {
+function mockStore(dataSource: 'local' | 'legacy-api' | 'datahub' | 'monitor_backend' = 'local') {
   vi.mocked(useAppStore).mockReturnValue({
     filters: {
       workStatus: 'all',
@@ -41,6 +41,14 @@ describe('FilterPanel', () => {
 
   it('should skip legacy backend bootstrap in datahub mode', () => {
     mockStore('datahub');
+
+    render(<FilterPanel />);
+
+    expect(getBootstrap).not.toHaveBeenCalled();
+  });
+
+  it('should skip legacy backend bootstrap in monitor backend mode', () => {
+    mockStore('monitor_backend');
 
     render(<FilterPanel />);
 

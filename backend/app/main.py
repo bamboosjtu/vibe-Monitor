@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.cache.store import MonitorCacheStore
 from app.core.config import settings
 from app.api.routes import router as api_router
 from app.core.db import init_db
@@ -22,6 +23,7 @@ def startup_event():
     # 注意：生产环境应该使用 alembic upgrade head 进行迁移
     # init_db() 仅作为开发辅助，确保表存在
     init_db()
+    MonitorCacheStore(settings.MONITOR_CACHE_DB).init_schema()
 
 # CORS 配置（允许前端开发服务器访问）
 app.add_middleware(

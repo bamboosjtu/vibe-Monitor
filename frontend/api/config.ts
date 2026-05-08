@@ -1,11 +1,14 @@
 /** API 数据源类型 */
-export type DataSourceMode = 'datahub' | 'local' | 'legacy-api'
+export type DataSourceMode = 'monitor_backend' | 'datahub' | 'local' | 'legacy-api'
 
 export const DATA_SOURCE: DataSourceMode =
-  (import.meta.env.VITE_DATA_SOURCE as DataSourceMode | undefined) ?? 'datahub'
+  (import.meta.env.VITE_DATA_SOURCE as DataSourceMode | undefined) ?? 'monitor_backend'
 
 export const DATAHUB_BASE_URL =
   import.meta.env.VITE_DATAHUB_BASE_URL ?? 'http://localhost:8000'
+
+export const MONITOR_BACKEND_URL =
+  import.meta.env.VITE_MONITOR_BACKEND_URL ?? 'http://localhost:8001'
 
 export const SANDBOX_SKELETON_LIMIT = Number(
   import.meta.env.VITE_SANDBOX_SKELETON_LIMIT ?? '10000',
@@ -25,9 +28,9 @@ export interface ApiConfig {
 
 function getEnvDataSource(): DataSourceMode {
   const source = import.meta.env.VITE_DATA_SOURCE as DataSourceMode | undefined;
-  return source && ['datahub', 'local', 'legacy-api'].includes(source)
+  return source && ['monitor_backend', 'datahub', 'local', 'legacy-api'].includes(source)
     ? source
-    : 'local';
+    : 'monitor_backend';
 }
 
 export const DATAHUB_API_BASE_URL =
@@ -37,7 +40,7 @@ export const DATAHUB_API_BASE_URL =
 /** 默认配置 */
 export const DEFAULT_API_CONFIG: ApiConfig = {
   source: getEnvDataSource(),
-  baseUrl: 'http://localhost:8001',
+  baseUrl: MONITOR_BACKEND_URL,
   datahubBaseUrl: DATAHUB_API_BASE_URL,
   timeout: 10000,
 };

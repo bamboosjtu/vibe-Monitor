@@ -5,3 +5,4 @@ export * from './client';
 export * from './mapApi';
 export * from './adapter';
 export * from './datahubApi';
+export * from './monitorBackendApi';
