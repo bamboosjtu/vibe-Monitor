@@ -12,6 +12,7 @@ import type {
   DataHubMapSummaryResponse,
   DataHubWorkPoint,
 } from '@/api/datahubApi';
+import { getSummaryWorkPoints } from '@/api/monitorBackendApi';
 
 function normalizeRiskLevel(value: string | number | null): RiskLevel {
   if (value === 1 || value === 2 || value === 3 || value === 4) {
@@ -112,7 +113,7 @@ export function adaptDataHubWorkPoint(item: DataHubWorkPoint): NormalizedStation
 export function adaptDataHubMapSummary(
   summary: DataHubMapSummaryResponse
 ): NormalizedStationMeeting[] {
-  return summary.work_points
+  return getSummaryWorkPoints(summary)
     .filter(item => Number.isFinite(item.longitude) && Number.isFinite(item.latitude))
     .map(adaptDataHubWorkPoint);
 }

@@ -9,6 +9,7 @@ from app.cache.store import MonitorCacheStore
 from app.core.config import settings
 from app.datahub.client import DataHubClient, DataHubClientError
 from app.read_models.service import MonitorReadModelService
+from app.schemas.responses import ApiResponse
 
 
 def _mock_datahub_payload(path: str) -> dict:
@@ -192,3 +193,10 @@ def test_monitor_backend_api_endpoints(monkeypatch, tmp_path: Path) -> None:
     assert refresh.status_code == 200
     assert status.json()["data"]["cache_entries_count"] >= 1
     assert clear.json()["data"]["cache_entries_deleted"] >= 1
+
+
+def test_api_response_timestamp_uses_default_factory() -> None:
+    first = ApiResponse(data={"ok": True})
+    second = ApiResponse(data={"ok": True})
+
+    assert first.timestamp <= second.timestamp

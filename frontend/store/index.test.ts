@@ -299,7 +299,7 @@ describe('App Store', () => {
   });
 
   describe('monitor backend mode', () => {
-    it('should load dates and latest work points from monitor backend', async () => {
+    it('should load dates and latest work points from monitor backend without meta', async () => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.endsWith('/api/map/dates')) {
@@ -324,12 +324,6 @@ describe('App Store', () => {
             data: {
               date: '2026-05-04',
               summary: {
-                date: '2026-05-04',
-                limit: 10000,
-                work_points_count: 1,
-                truncated: false,
-              },
-              meta: {
                 date: '2026-05-04',
                 limit: 10000,
                 work_points_count: 1,
@@ -370,6 +364,8 @@ describe('App Store', () => {
       expect(state.availableDates).toEqual(['2026-05-03', '2026-05-04']);
       expect(state.currentDate).toBe('2026-05-04');
       expect(state.normalizedData).toHaveLength(1);
+      expect(state.filteredData).toHaveLength(1);
+      expect(state.parseStats?.totalRawRecords).toBe(1);
       expect(state.normalizedData[0].projectName).toBe('缓存作业点');
       expect(state.normalizedData[0].riskLevel).toBe(4);
     });

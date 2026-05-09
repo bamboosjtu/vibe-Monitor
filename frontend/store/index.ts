@@ -14,6 +14,8 @@ import {
   fetchDataHubMapSummary,
   fetchMonitorBackendDates,
   fetchMonitorBackendMapSummary,
+  getSummaryDate,
+  getSummaryWorkPoints,
   getApiConfig,
   getMapSummary,
   setDataSource as setApiDataSource,
@@ -257,23 +259,24 @@ export const useAppStore = create<AppState>((set, get) => ({
         const remoteSummary = dataSource === 'monitor_backend'
           ? await fetchMonitorBackendMapSummary(date)
           : await fetchDataHubMapSummary(date);
+        const workPoints = getSummaryWorkPoints(remoteSummary);
         const normalizedData = adaptDataHubMapSummary(remoteSummary);
 
         loadSuccess({
           rawData: null as any,
           normalizedData,
           stats: {
-            totalRawRecords: remoteSummary.work_points.length,
+            totalRawRecords: workPoints.length,
             validCoordinateRecords: normalizedData.length,
-            filteredRecords: remoteSummary.work_points.length - normalizedData.length,
+            filteredRecords: workPoints.length - normalizedData.length,
             filterReasons: {
               emptyCoordinates: 0,
-              invalidCoordinates: remoteSummary.work_points.length - normalizedData.length,
+              invalidCoordinates: workPoints.length - normalizedData.length,
               outOfBounds: 0,
               zeroCoordinates: 0,
             },
           },
-          date: remoteSummary.meta.date ?? date,
+          date: getSummaryDate(remoteSummary, date) ?? undefined,
         });
         return;
       }
@@ -375,23 +378,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       const summary = await remoteSummaryFetcher(selectedDate ?? undefined);
+      const workPoints = getSummaryWorkPoints(summary);
       const normalizedData = adaptDataHubMapSummary(summary);
 
       loadSuccess({
         rawData: null as any,
         normalizedData,
         stats: {
-          totalRawRecords: summary.work_points.length,
+          totalRawRecords: workPoints.length,
           validCoordinateRecords: normalizedData.length,
-          filteredRecords: summary.work_points.length - normalizedData.length,
+          filteredRecords: workPoints.length - normalizedData.length,
           filterReasons: {
             emptyCoordinates: 0,
-            invalidCoordinates: summary.work_points.length - normalizedData.length,
+            invalidCoordinates: workPoints.length - normalizedData.length,
             outOfBounds: 0,
             zeroCoordinates: 0,
           },
         },
-        date: summary.meta.date ?? selectedDate ?? undefined,
+        date: getSummaryDate(summary, selectedDate) ?? undefined,
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'DataHub 数据加载失败';

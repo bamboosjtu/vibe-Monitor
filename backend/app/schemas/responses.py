@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional, Generic, TypeVar
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 T = TypeVar('T')
 
@@ -15,7 +15,7 @@ class ApiResponse(BaseModel, Generic[T]):
     code: int = 0
     message: str = "success"
     data: Optional[T] = None
-    timestamp: datetime = datetime.utcnow()
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
@@ -52,7 +52,7 @@ class ErrorResponse(BaseModel):
     code: int
     message: str
     details: Optional[str] = None
-    timestamp: datetime = datetime.utcnow()
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 # ==================== 导入相关 Schema ====================
