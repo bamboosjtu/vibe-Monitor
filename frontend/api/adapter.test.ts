@@ -84,6 +84,7 @@ describe('DataHub adapter', () => {
     expect(skeleton.towers).toEqual([
       {
         id: 'dcp:tower:TW-001',
+        project_code: null,
         single_project_code: 'SP-001',
         tower_no: 'N101',
         longitude: 112.94,
@@ -94,6 +95,7 @@ describe('DataHub adapter', () => {
     expect(skeleton.stations).toEqual([
       {
         id: 'dcp:station:SP-001',
+        project_code: 'PRJ-001',
         single_project_code: 'SP-001',
         name: 'SP-001',
         prj_code: 'PRJ-001',

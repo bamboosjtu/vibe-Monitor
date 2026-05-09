@@ -108,6 +108,7 @@ export interface SkeletonLine {
 /** 杆塔骨架项 */
 export interface SkeletonTower {
   id: string;
+  project_code: string | null;
   single_project_code: string;
   tower_no: string;
   longitude: number;
@@ -118,6 +119,7 @@ export interface SkeletonTower {
 /** 变电站骨架项（M1 Round2 新增） */
 export interface SkeletonStation {
   id: string;
+  project_code: string | null;
   single_project_code: string;
   name: string;
   prj_code: string | null;

@@ -8,6 +8,10 @@ vi.mock('@/api/mapApi', () => ({
   getBootstrap: vi.fn(),
 }));
 
+vi.mock('@/features/project/ProjectSelector', () => ({
+  ProjectSelector: () => <div data-testid="project-selector" />,
+}));
+
 vi.mock('@/store', () => ({
   useAppStore: vi.fn(),
 }));
@@ -31,6 +35,7 @@ function mockStore(dataSource: 'local' | 'legacy-api' | 'datahub' | 'monitor_bac
     },
     setLayerVisibility: vi.fn(),
     dataSource,
+    selectedProjectCode: null,
   } as any);
 }
 

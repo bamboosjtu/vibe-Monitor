@@ -1,25 +1,318 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { MAP_CONFIG, OSM_STYLE } from '@/constants/map';
-import { POINT_LAYER_CONFIG, BOUNDARY_LAYER_CONFIG, SELECTED_POINT_LAYER_CONFIG } from '@/constants/layers';
+import {
+  POINT_LAYER_CONFIG,
+  BOUNDARY_LAYER_CONFIG,
+  SELECTED_POINT_LAYER_CONFIG,
+} from '@/constants/layers';
 import { recordsToGeoJSON } from '@/lib/geojson';
 import { useAppStore } from '@/store';
 import type { NormalizedStationMeeting } from '@/types';
-import { getSkeleton } from '@/api/mapApi';
+import { getSkeleton, type SkeletonResponse } from '@/api/mapApi';
+
+type FeatureCollection = GeoJSON.FeatureCollection<GeoJSON.Geometry, GeoJSON.GeoJsonProperties>;
+
+function emptyFeatureCollection(): FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: [],
+  };
+}
+
+function normalizeProjectStatus(status: string | null | undefined): string {
+  return status && status.trim() ? status : 'unknown';
+}
+
+function getProjectStatusCodeSet(
+  selectedProjectStatus: string,
+  projectStatusList: Array<{ project_code: string | null; status: string | null }>,
+  projectListRaw: Array<{ project_code: string | null; status: string | null }>,
+): Set<string> | null {
+  if (selectedProjectStatus === 'all') {
+    return null;
+  }
+  const items =
+    projectStatusList.length > 0
+      ? projectStatusList
+      : projectListRaw.map(item => ({
+          project_code: item.project_code,
+          status: item.status,
+        }));
+  return new Set(
+    items
+      .filter(item => normalizeProjectStatus(item.status) === selectedProjectStatus)
+      .map(item => item.project_code)
+      .filter((value): value is string => Boolean(value)),
+  );
+}
+
+function getAttributes(entity: unknown): Record<string, unknown> {
+  if (typeof entity === 'object' && entity !== null && 'attributes' in entity) {
+    const value = (entity as { attributes?: unknown }).attributes;
+    if (typeof value === 'object' && value !== null) {
+      return value as Record<string, unknown>;
+    }
+  }
+  return {};
+}
+
+function toTowerFeature(tower: {
+  id: string;
+  project_code: string | null;
+  single_project_code: string;
+  tower_no: string;
+  longitude: number;
+  latitude: number;
+  tower_sequence_no: number | null;
+}): GeoJSON.Feature<GeoJSON.Point, GeoJSON.GeoJsonProperties> {
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Point',
+      coordinates: [tower.longitude, tower.latitude],
+    },
+    properties: {
+      id: tower.id,
+      project_code: tower.project_code,
+      single_project_code: tower.single_project_code,
+      tower_no: tower.tower_no,
+      tower_sequence_no: tower.tower_sequence_no,
+      longitude: tower.longitude,
+      latitude: tower.latitude,
+    },
+  };
+}
+
+function toStationFeature(station: {
+  id: string;
+  project_code: string | null;
+  single_project_code: string;
+  name: string;
+  prj_code: string | null;
+  longitude: number;
+  latitude: number;
+}): GeoJSON.Feature<GeoJSON.Point, GeoJSON.GeoJsonProperties> {
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Point',
+      coordinates: [station.longitude, station.latitude],
+    },
+    properties: {
+      id: station.id,
+      project_code: station.project_code,
+      single_project_code: station.single_project_code,
+      name: station.name,
+      prj_code: station.prj_code,
+      longitude: station.longitude,
+      latitude: station.latitude,
+    },
+  };
+}
+
+function toProjectMapTowerFeature(entity: Record<string, unknown>) {
+  const attrs = getAttributes(entity);
+  const longitude = Number(attrs.longitude);
+  const latitude = Number(attrs.latitude);
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+    return null;
+  }
+  return {
+    type: 'Feature' as const,
+    geometry: {
+      type: 'Point' as const,
+      coordinates: [longitude, latitude],
+    },
+    properties: {
+      id: entity.entity_key,
+      project_code: attrs.project_code ?? null,
+      single_project_code: attrs.single_project_code ?? null,
+      bidding_section_code: attrs.bidding_section_code ?? null,
+      tower_no: attrs.tower_no ?? null,
+      longitude,
+      latitude,
+    },
+  };
+}
+
+function toProjectMapStationFeature(entity: Record<string, unknown>) {
+  const attrs = getAttributes(entity);
+  const longitude = Number(attrs.longitude);
+  const latitude = Number(attrs.latitude);
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+    return null;
+  }
+  return {
+    type: 'Feature' as const,
+    geometry: {
+      type: 'Point' as const,
+      coordinates: [longitude, latitude],
+    },
+    properties: {
+      id: entity.entity_key,
+      project_code: attrs.project_code ?? null,
+      single_project_code: attrs.single_project_code ?? null,
+      name: attrs.single_project_name ?? attrs.station_name ?? entity.entity_key,
+      prj_code: attrs.project_code ?? null,
+      longitude,
+      latitude,
+    },
+  };
+}
+
+function getVisibleTowerData(args: {
+  globalSkeleton: SkeletonResponse | null;
+  selectedProjectCode: string | null;
+  selectedProjectMap: Record<string, unknown> | null;
+  selectedProjectStatus: string;
+  projectStatusList: Array<{ project_code: string | null; status: string | null }>;
+  projectListRaw: Array<{ project_code: string | null; status: string | null }>;
+}) {
+  const allowedCodes = getProjectStatusCodeSet(
+    args.selectedProjectStatus,
+    args.projectStatusList,
+    args.projectListRaw,
+  );
+
+  if (args.selectedProjectCode && args.selectedProjectMap) {
+    const towers = Array.isArray(args.selectedProjectMap.towers)
+      ? args.selectedProjectMap.towers
+      : [];
+    return towers
+      .map(item => toProjectMapTowerFeature(item as Record<string, unknown>))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .filter(item => {
+        const projectCode = item.properties.project_code;
+        if (args.selectedProjectCode && projectCode !== args.selectedProjectCode) {
+          return false;
+        }
+        if (allowedCodes) {
+          return typeof projectCode === 'string' && allowedCodes.has(projectCode);
+        }
+        return true;
+      });
+  }
+
+  if (!args.globalSkeleton) {
+    return [];
+  }
+
+  return args.globalSkeleton.towers
+    .filter(item => {
+      if (args.selectedProjectCode) {
+        return Boolean(item.project_code) && item.project_code === args.selectedProjectCode;
+      }
+      if (allowedCodes) {
+        return typeof item.project_code === 'string' && allowedCodes.has(item.project_code);
+      }
+      return true;
+    })
+    .map(toTowerFeature);
+}
+
+function getVisibleStationData(args: {
+  globalSkeleton: SkeletonResponse | null;
+  selectedProjectCode: string | null;
+  selectedProjectMap: Record<string, unknown> | null;
+  selectedProjectStatus: string;
+  projectStatusList: Array<{ project_code: string | null; status: string | null }>;
+  projectListRaw: Array<{ project_code: string | null; status: string | null }>;
+}) {
+  const allowedCodes = getProjectStatusCodeSet(
+    args.selectedProjectStatus,
+    args.projectStatusList,
+    args.projectListRaw,
+  );
+
+  if (args.selectedProjectCode && args.selectedProjectMap) {
+    const stations = Array.isArray(args.selectedProjectMap.stations)
+      ? args.selectedProjectMap.stations
+      : [];
+    return stations
+      .map(item => toProjectMapStationFeature(item as Record<string, unknown>))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .filter(item => {
+        const projectCode = item.properties.project_code;
+        if (args.selectedProjectCode && projectCode !== args.selectedProjectCode) {
+          return false;
+        }
+        if (allowedCodes) {
+          return typeof projectCode === 'string' && allowedCodes.has(projectCode);
+        }
+        return true;
+      });
+  }
+
+  if (!args.globalSkeleton) {
+    return [];
+  }
+
+  return args.globalSkeleton.stations
+    .filter(item => {
+      if (args.selectedProjectCode) {
+        return Boolean(item.project_code) && item.project_code === args.selectedProjectCode;
+      }
+      if (allowedCodes) {
+        return typeof item.project_code === 'string' && allowedCodes.has(item.project_code);
+      }
+      return true;
+    })
+    .map(toStationFeature);
+}
+
+function getHighlightedTowerFeatures(selectedLineSection: Record<string, unknown> | null) {
+  if (!selectedLineSection || !Array.isArray(selectedLineSection.matched_towers)) {
+    return [];
+  }
+  return selectedLineSection.matched_towers
+    .map(item => {
+      const entity = item as Record<string, unknown>;
+      const attrs = getAttributes(entity);
+      const longitude = Number(attrs.longitude);
+      const latitude = Number(attrs.latitude);
+      if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+        return null;
+      }
+      return {
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [longitude, latitude],
+        },
+        properties: {
+          id: entity.entity_key,
+          tower_no: attrs.tower_no ?? null,
+        },
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+}
 
 export function MapContainer() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
-  const { filteredData, selectedItem, layerVisibility, setSelectedObject } = useAppStore();
+  const [mapReady, setMapReady] = useState(false);
+  const [globalSkeleton, setGlobalSkeleton] = useState<SkeletonResponse | null>(null);
+  const {
+    dataSource,
+    filteredData,
+    selectedItem,
+    layerVisibility,
+    setSelectedObject,
+    selectedProjectCode,
+    selectedProjectMap,
+    selectedProjectStatus,
+    projectStatusList,
+    projectListRaw,
+    selectedLineSection,
+  } = useAppStore();
 
   useEffect(() => {
-    console.log('[Map] filteredData changed, count:', filteredData.length);
-  }, [filteredData]);
-
-  // 初始化地图
-  useEffect(() => {
-    if (!mapContainer.current) return;
+    if (!mapContainer.current) {
+      return;
+    }
 
     map.current = new maplibregl.Map({
       container: mapContainer.current,
@@ -30,131 +323,220 @@ export function MapContainer() {
       maxZoom: MAP_CONFIG.maxZoom,
     });
 
-    // 添加导航控件
     map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+    map.current.addControl(
+      new maplibregl.ScaleControl({
+        maxWidth: 100,
+        unit: 'metric',
+      }),
+      'bottom-left',
+    );
 
-    // 添加比例尺控件
-    map.current.addControl(new maplibregl.ScaleControl({
-      maxWidth: 100,
-      unit: 'metric',
-    }), 'bottom-left');
-
-    // 地图加载完成后初始化图层
     map.current.on('load', async () => {
       initializeLayers(map.current!);
       setupClickHandler(map.current!, setSelectedObject);
-      // M1R2: 骨架数据加载与主链路隔离，失败不影响日期/WorkPoint
-      try {
-        await loadBoundaryLayer(map.current!);
-      } catch (e) {
-        console.warn('[Map] 边界层加载失败（非关键）:', e);
-      }
-      try {
-        await loadSkeletonLayers(map.current!, layerVisibility);
-      } catch (e) {
-        console.warn('[Map] 骨架层加载失败（非关键）:', e);
-      }
+      setMapReady(true);
+      await loadBoundaryLayer(map.current!);
     });
 
     return () => {
+      setMapReady(false);
       map.current?.remove();
     };
   }, [setSelectedObject]);
 
-  // 监听筛选数据变化，更新点位图层
   useEffect(() => {
-    if (!map.current) return;
-
-    // 等待地图加载完成
-    if (!map.current.isStyleLoaded()) {
-      map.current.once('styledata', () => {
-        updatePointLayer(map.current!, filteredData);
+    let alive = true;
+    void getSkeleton()
+      .then(data => {
+        if (alive) {
+          setGlobalSkeleton(data);
+        }
+      })
+      .catch(error => {
+        console.warn('[Map] 骨架数据加载失败:', error);
+        if (alive) {
+          setGlobalSkeleton(null);
+        }
       });
+    return () => {
+      alive = false;
+    };
+  }, [dataSource]);
+
+  useEffect(() => {
+    if (!map.current || !mapReady) {
+      return;
+    }
+    updatePointLayer(map.current, filteredData);
+  }, [filteredData, mapReady]);
+
+  useEffect(() => {
+    if (!map.current || !mapReady) {
+      return;
+    }
+    updateSelectedHighlight(map.current, selectedItem);
+  }, [mapReady, selectedItem]);
+
+  useEffect(() => {
+    if (!map.current || !mapReady) {
+      return;
+    }
+    updateGeoJsonSource(
+      map.current,
+      'tower-data',
+      getVisibleTowerData({
+        globalSkeleton,
+        selectedProjectCode,
+        selectedProjectMap: selectedProjectMap as Record<string, unknown> | null,
+        selectedProjectStatus,
+        projectStatusList,
+        projectListRaw,
+      }),
+    );
+    updateGeoJsonSource(
+      map.current,
+      'station-point-data',
+      getVisibleStationData({
+        globalSkeleton,
+        selectedProjectCode,
+        selectedProjectMap: selectedProjectMap as Record<string, unknown> | null,
+        selectedProjectStatus,
+        projectStatusList,
+        projectListRaw,
+      }),
+    );
+  }, [
+    globalSkeleton,
+    mapReady,
+    projectListRaw,
+    projectStatusList,
+    selectedProjectCode,
+    selectedProjectMap,
+    selectedProjectStatus,
+  ]);
+
+  useEffect(() => {
+    if (!map.current || !mapReady) {
+      return;
+    }
+    updateGeoJsonSource(
+      map.current,
+      'highlighted-towers-data',
+      getHighlightedTowerFeatures(
+        selectedLineSection as Record<string, unknown> | null,
+      ),
+    );
+  }, [mapReady, selectedLineSection]);
+
+  useEffect(() => {
+    if (!map.current || !mapReady) {
       return;
     }
 
-    updatePointLayer(map.current, filteredData);
-  }, [filteredData]);
-
-  // 监听选中项变化，更新选中态高亮
-  useEffect(() => {
-    if (!map.current || !map.current.isStyleLoaded()) return;
-    updateSelectedHighlight(map.current, selectedItem);
-  }, [selectedItem]);
-
-  // M1 Round2: 监听图层显隐变化
-  useEffect(() => {
-    if (!map.current || !map.current.isStyleLoaded()) return;
-    
-    // 更新各图层显隐
     const layers = [
       { id: 'tower-layer', key: 'tower' },
       { id: 'station-points', key: 'workPoint' },
       { id: 'station-point-layer', key: 'station' },
+      { id: 'highlighted-tower-layer', key: 'tower' },
     ] as const;
-    
+
     layers.forEach(({ id, key }) => {
       if (map.current?.getLayer(id)) {
         map.current.setLayoutProperty(
           id,
           'visibility',
-          layerVisibility[key] ? 'visible' : 'none'
+          layerVisibility[key] ? 'visible' : 'none',
         );
       }
     });
-  }, [layerVisibility]);
+  }, [layerVisibility, mapReady]);
 
   return (
-    <div className="w-full h-full rounded-lg overflow-hidden border border-gray-200 relative">
-      <div ref={mapContainer} className="w-full h-full" />
+    <div className="relative h-full w-full overflow-hidden rounded-lg border border-gray-200">
+      <div ref={mapContainer} className="h-full w-full" />
     </div>
   );
 }
 
-/**
- * 初始化地图图层（点位数据源 + 选中态图层）
- * 注意：边界图层现在在外层加载，确保顺序
- */
 function initializeLayers(map: maplibregl.Map) {
-    // 初始化 WorkPoint 点位数据源（空）
   map.addSource('workpoint-data', {
     type: 'geojson',
-    data: {
-      type: 'FeatureCollection',
-      features: [],
-    },
+    data: emptyFeatureCollection(),
   });
-
-  // 添加 WorkPoint 点位图层
   map.addLayer(POINT_LAYER_CONFIG);
 
-  // 4. 添加选中态图层（初始为空）
   map.addSource('selected-point', {
     type: 'geojson',
-    data: {
-      type: 'FeatureCollection',
-      features: [],
-    },
+    data: emptyFeatureCollection(),
   });
   map.addLayer(SELECTED_POINT_LAYER_CONFIG);
 
-  // 5. 立即用当前 store 中的数据更新点位图层
-  // 修复首次加载时数据已准备好但图层未更新的问题
+  registerTowerIcon(map);
+  registerStationIcon(map);
+
+  map.addSource('tower-data', {
+    type: 'geojson',
+    data: emptyFeatureCollection(),
+  });
+  map.addLayer({
+    id: 'tower-layer',
+    type: 'symbol',
+    source: 'tower-data',
+    layout: {
+      'icon-image': 'tower-icon',
+      'icon-size': 0.6,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  });
+
+  map.addSource('station-point-data', {
+    type: 'geojson',
+    data: emptyFeatureCollection(),
+  });
+  map.addLayer({
+    id: 'station-point-layer',
+    type: 'symbol',
+    source: 'station-point-data',
+    layout: {
+      'icon-image': 'station-icon',
+      'icon-size': 0.7,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  });
+
+  map.addSource('highlighted-towers-data', {
+    type: 'geojson',
+    data: emptyFeatureCollection(),
+  });
+  map.addLayer({
+    id: 'highlighted-tower-layer',
+    type: 'circle',
+    source: 'highlighted-towers-data',
+    paint: {
+      'circle-radius': 10,
+      'circle-color': '#fde047',
+      'circle-stroke-width': 3,
+      'circle-stroke-color': '#ca8a04',
+      'circle-opacity': 0.9,
+    },
+  });
+
   const { filteredData } = useAppStore.getState();
   updatePointLayer(map, filteredData);
 }
 
-/**
- * 设置点击事件处理器（M1 Round2: 支持四类对象）
- */
 function setupClickHandler(
   map: maplibregl.Map,
-  setSelectedObject: (obj: { type: 'tower' | 'station' | 'workPoint'; data: any } | null) => void
+  setSelectedObject: (obj: { type: 'tower' | 'station' | 'workPoint'; data: any } | null) => void,
 ) {
-  // WorkPoint 点击（原有）
-  map.on('click', 'station-points', (e) => {
-    if (!e.features || e.features.length === 0) return;
-    const feature = e.features[0];
+  map.on('click', 'station-points', event => {
+    if (!event.features || event.features.length === 0) {
+      return;
+    }
+    const feature = event.features[0];
     const properties = feature.properties;
     const { filteredData } = useAppStore.getState();
     const selectedRecord = filteredData.find(item => item.id === properties?.id);
@@ -163,23 +545,20 @@ function setupClickHandler(
     }
   });
 
-  // Tower 点击
-  map.on('click', 'tower-layer', (e) => {
-    if (!e.features || e.features.length === 0) return;
-    const feature = e.features[0];
-    setSelectedObject({ type: 'tower', data: feature.properties });
+  map.on('click', 'tower-layer', event => {
+    if (!event.features || event.features.length === 0) {
+      return;
+    }
+    setSelectedObject({ type: 'tower', data: event.features[0].properties });
   });
 
-  // Station 点击
-  map.on('click', 'station-point-layer', (e) => {
-    if (!e.features || e.features.length === 0) return;
-    const feature = e.features[0];
-    setSelectedObject({ type: 'station', data: feature.properties });
+  map.on('click', 'station-point-layer', event => {
+    if (!event.features || event.features.length === 0) {
+      return;
+    }
+    setSelectedObject({ type: 'station', data: event.features[0].properties });
   });
 
-  // M1R2: Line 点击已移除
-
-  // 鼠标样式变化
   ['station-points', 'tower-layer', 'station-point-layer'].forEach(layerId => {
     map.on('mouseenter', layerId, () => {
       map.getCanvas().style.cursor = 'pointer';
@@ -190,64 +569,48 @@ function setupClickHandler(
   });
 }
 
-/**
- * 更新点位图层数据
- */
 function updatePointLayer(map: maplibregl.Map, data: NormalizedStationMeeting[]) {
-  console.log('[Map] updatePointLayer called, data.length:', data.length);
-  
   const source = map.getSource('workpoint-data') as maplibregl.GeoJSONSource | undefined;
-
   if (!source) {
-    console.warn('[Map] 点位数据源不存在 (workpoint-data)');
     return;
   }
-
-  console.log('[Map] workpoint-data source exists, proceeding to setData');
-
-  const geojson = recordsToGeoJSON(data);
-  console.log('[Map] geojson.features.length:', geojson.features.length);
-  
-  source.setData(geojson);
-  console.log('[Map] WorkPoint setData executed, features:', geojson.features.length);
+  source.setData(recordsToGeoJSON(data));
 }
 
-/**
- * 更新选中态高亮
- */
 function updateSelectedHighlight(
   map: maplibregl.Map,
-  selectedItem: NormalizedStationMeeting | null
+  selectedItem: NormalizedStationMeeting | null,
 ) {
   const source = map.getSource('selected-point') as maplibregl.GeoJSONSource | undefined;
-
   if (!source) {
-    console.warn('[Map] 选中态数据源不存在');
     return;
   }
-
   if (!selectedItem) {
-    // 清空选中态
-    source.setData({
-      type: 'FeatureCollection',
-      features: [],
-    });
+    source.setData(emptyFeatureCollection());
     return;
   }
-
-  // 设置选中项为高亮
-  const geojson = recordsToGeoJSON([selectedItem]);
-  source.setData(geojson);
+  source.setData(recordsToGeoJSON([selectedItem]));
 }
 
-/**
- * 加载湖南省边界图层
- */
+function updateGeoJsonSource(
+  map: maplibregl.Map,
+  sourceId: string,
+  features: GeoJSON.Feature<GeoJSON.Geometry, GeoJSON.GeoJsonProperties>[],
+) {
+  const source = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+  if (!source) {
+    return;
+  }
+  source.setData({
+    type: 'FeatureCollection',
+    features,
+  });
+}
+
 async function loadBoundaryLayer(map: maplibregl.Map) {
   try {
     const response = await fetch('/data/hunan_boundary.json');
     if (!response.ok) {
-      console.warn('[Map] 边界数据加载失败');
       return;
     }
 
@@ -260,17 +623,14 @@ async function loadBoundaryLayer(map: maplibregl.Map) {
 
     map.addLayer(BOUNDARY_LAYER_CONFIG.fill);
     map.addLayer(BOUNDARY_LAYER_CONFIG.line);
-  } catch (err) {
-    console.error('[Map] 边界图层加载错误:', err);
+  } catch (error) {
+    console.error('[Map] 边界图层加载错误:', error);
   }
 }
 
-/**
- * 将 canvas 转换为 MapLibre 可用的 { width, height, data: Uint8Array } 格式
- */
-function canvasToImageStyle(canvas: HTMLCanvasElement): { width: number; height: number; data: Uint8Array } {
-  const ctx = canvas.getContext('2d')!;
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+function canvasToImageStyle(canvas: HTMLCanvasElement) {
+  const context = canvas.getContext('2d')!;
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   return {
     width: canvas.width,
     height: canvas.height,
@@ -278,191 +638,90 @@ function canvasToImageStyle(canvas: HTMLCanvasElement): { width: number; height:
   };
 }
 
-/**
- * 绘制三角形到 canvas
- */
-function drawTriangleToCanvas(canvas: HTMLCanvasElement, fillColor: string, strokeColor: string, strokeWidth: number) {
-  const ctx = canvas.getContext('2d')!;
-  const w = canvas.width;
-  const h = canvas.height;
-  const pad = strokeWidth + 1;
+function drawTriangleToCanvas(
+  canvas: HTMLCanvasElement,
+  fillColor: string,
+  strokeColor: string,
+  strokeWidth: number,
+) {
+  const context = canvas.getContext('2d')!;
+  const width = canvas.width;
+  const height = canvas.height;
+  const padding = strokeWidth + 1;
 
-  ctx.fillStyle = fillColor;
-  ctx.strokeStyle = strokeColor;
-  ctx.lineWidth = strokeWidth;
-  ctx.lineJoin = 'round';
+  context.fillStyle = fillColor;
+  context.strokeStyle = strokeColor;
+  context.lineWidth = strokeWidth;
+  context.lineJoin = 'round';
 
-  ctx.beginPath();
-  ctx.moveTo(w / 2, pad);
-  ctx.lineTo(pad, h - pad);
-  ctx.lineTo(w - pad, h - pad);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+  context.beginPath();
+  context.moveTo(width / 2, padding);
+  context.lineTo(padding, height - padding);
+  context.lineTo(width - padding, height - padding);
+  context.closePath();
+  context.fill();
+  context.stroke();
 }
 
-/**
- * 绘制五角星到 canvas
- */
-function drawStarToCanvas(canvas: HTMLCanvasElement, fillColor: string, strokeColor: string, strokeWidth: number) {
-  const ctx = canvas.getContext('2d')!;
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  const maxR = Math.min(cx, cy) - strokeWidth - 1;
-  const innerR = maxR * 0.4;
+function drawStarToCanvas(
+  canvas: HTMLCanvasElement,
+  fillColor: string,
+  strokeColor: string,
+  strokeWidth: number,
+) {
+  const context = canvas.getContext('2d')!;
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  const outerRadius = Math.min(centerX, centerY) - strokeWidth - 1;
+  const innerRadius = outerRadius * 0.4;
 
-  ctx.fillStyle = fillColor;
-  ctx.strokeStyle = strokeColor;
-  ctx.lineWidth = strokeWidth;
-  ctx.lineJoin = 'round';
+  context.fillStyle = fillColor;
+  context.strokeStyle = strokeColor;
+  context.lineWidth = strokeWidth;
+  context.lineJoin = 'round';
 
-  ctx.beginPath();
-  for (let i = 0; i < 5; i++) {
-    const outerAngle = (i * 72 - 90) * Math.PI / 180;
-    const innerAngle = ((i * 72) + 36 - 90) * Math.PI / 180;
-    if (i === 0) {
-      ctx.moveTo(cx + maxR * Math.cos(outerAngle), cy + maxR * Math.sin(outerAngle));
+  context.beginPath();
+  for (let index = 0; index < 5; index += 1) {
+    const outerAngle = ((index * 72 - 90) * Math.PI) / 180;
+    const innerAngle = (((index * 72 + 36 - 90) * Math.PI) / 180);
+    if (index === 0) {
+      context.moveTo(
+        centerX + outerRadius * Math.cos(outerAngle),
+        centerY + outerRadius * Math.sin(outerAngle),
+      );
     }
-    ctx.lineTo(cx + maxR * Math.cos(outerAngle), cy + maxR * Math.sin(outerAngle));
-    ctx.lineTo(cx + innerR * Math.cos(innerAngle), cy + innerR * Math.sin(innerAngle));
+    context.lineTo(
+      centerX + outerRadius * Math.cos(outerAngle),
+      centerY + outerRadius * Math.sin(outerAngle),
+    );
+    context.lineTo(
+      centerX + innerRadius * Math.cos(innerAngle),
+      centerY + innerRadius * Math.sin(innerAngle),
+    );
   }
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+  context.closePath();
+  context.fill();
+  context.stroke();
 }
 
-/**
- * M1R2-hotfix: 加载骨架图层（杆塔 + 变电站）
- * Tower: symbol layer + triangle icon (紫色)
- * Station: symbol layer + star icon (红色)
- */
-async function loadSkeletonLayers(map: maplibregl.Map, visibility: { tower: boolean; station: boolean; workPoint: boolean }) {
-  console.log('[M1R2] loadSkeletonLayers function ENTERED');
-  try {
-    console.log('[M1R2] 开始加载骨架数据...');
-    const skeleton = await getSkeleton();
-    console.log('[M1R2] getSkeleton() returned:', {
-      lines: skeleton?.lines?.length ?? 'undefined',
-      towers: skeleton?.towers?.length ?? 'undefined',
-      stations: skeleton?.stations?.length ?? 'undefined',
-    });
-
-    if (!skeleton || !skeleton.towers || !skeleton.stations) {
-      console.error('[M1R2] skeleton data is invalid:', skeleton);
-      return;
-    }
-
-    // M1R2: 线路图层已移除，等待更可靠数据后再恢复
-    console.log('[M1R2] 线路数据暂不显示，lines:', skeleton.lines.length);
-
-    // 注册 Tower 三角形 icon
-    const towerCanvas = document.createElement('canvas');
-    towerCanvas.width = 64;
-    towerCanvas.height = 64;
-    drawTriangleToCanvas(towerCanvas, '#8b5cf6', '#ffffff', 2);
-    map.addImage('tower-icon', canvasToImageStyle(towerCanvas), { sdf: false });
-    console.log('[M1R2] Tower icon registered, size:', towerCanvas.width, 'x', towerCanvas.height);
-
-    // 注册 Station 五角星 icon
-    const stationCanvas = document.createElement('canvas');
-    stationCanvas.width = 72;
-    stationCanvas.height = 72;
-    drawStarToCanvas(stationCanvas, '#ff0000', '#ffffff', 3);
-    map.addImage('station-icon', canvasToImageStyle(stationCanvas), { sdf: false });
-    console.log('[M1R2] Station icon registered, size:', stationCanvas.width, 'x', stationCanvas.height);
-
-    // 1. 杆塔图层 - symbol layer + triangle
-    console.log('[M1R2] Building towerFeatures from', skeleton.towers.length, 'towers');
-    const towerFeatures = skeleton.towers.map(tower => ({
-      type: 'Feature' as const,
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [tower.longitude, tower.latitude],
-      },
-      properties: {
-        id: tower.id,
-        single_project_code: tower.single_project_code,
-        tower_no: tower.tower_no,
-        tower_sequence_no: tower.tower_sequence_no,
-        longitude: tower.longitude,
-        latitude: tower.latitude,
-      },
-    }));
-
-    console.log('[M1R2] Tower features count:', towerFeatures.length);
-    
-    map.addSource('tower-data', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: towerFeatures,
-      },
-    });
-    const towerSource = map.getSource('tower-data');
-    console.log('[M1R2] tower-data source exists:', !!towerSource, 'features:', (towerSource as any)?._data?.features?.length);
-
-    map.addLayer({
-      id: 'tower-layer',
-      type: 'symbol',
-      source: 'tower-data',
-      layout: {
-        'icon-image': 'tower-icon',
-        'icon-size': 0.6,
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-      },
-    });
-    map.setLayoutProperty('tower-layer', 'visibility', visibility.tower ? 'visible' : 'none');
-    console.log('[M1R2] Tower layer added:', towerFeatures.length, 'features, visibility:', visibility.tower ? 'visible' : 'none');
-
-    // 2. 变电站图层 - symbol layer + star
-    console.log('[M1R2] Building stationFeatures from', skeleton.stations.length, 'stations');
-    const stationFeatures = skeleton.stations.map(station => ({
-      type: 'Feature' as const,
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [station.longitude, station.latitude],
-      },
-      properties: {
-        id: station.id,
-        single_project_code: station.single_project_code,
-        name: station.name,
-        prj_code: station.prj_code,
-        longitude: station.longitude,
-        latitude: station.latitude,
-      },
-    }));
-
-    console.log('[M1R2] Station features count:', stationFeatures.length);
-    
-    map.addSource('station-point-data', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: stationFeatures,
-      },
-    });
-    const stationSource = map.getSource('station-point-data');
-    console.log('[M1R2] station-point-data source exists:', !!stationSource, 'features:', (stationSource as any)?._data?.features?.length);
-
-    map.addLayer({
-      id: 'station-point-layer',
-      type: 'symbol',
-      source: 'station-point-data',
-      layout: {
-        'icon-image': 'station-icon',
-        'icon-size': 0.7,
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-      },
-    });
-    map.setLayoutProperty('station-point-layer', 'visibility', visibility.station ? 'visible' : 'none');
-    console.log('[M1R2] Station layer added:', stationFeatures.length, 'features, visibility:', visibility.station ? 'visible' : 'none');
-
-    console.log('[M1R2] loadSkeletonLayers COMPLETE');
-
-  } catch (err) {
-    console.error('[M1] 骨架数据加载失败:', err);
-    console.error('[M1] Error stack:', err instanceof Error ? err.stack : 'no stack');
+function registerTowerIcon(map: maplibregl.Map) {
+  if (map.hasImage('tower-icon')) {
+    return;
   }
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  drawTriangleToCanvas(canvas, '#8b5cf6', '#ffffff', 2);
+  map.addImage('tower-icon', canvasToImageStyle(canvas), { sdf: false });
+}
+
+function registerStationIcon(map: maplibregl.Map) {
+  if (map.hasImage('station-icon')) {
+    return;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = 72;
+  canvas.height = 72;
+  drawStarToCanvas(canvas, '#ff0000', '#ffffff', 3);
+  map.addImage('station-icon', canvasToImageStyle(canvas), { sdf: false });
 }

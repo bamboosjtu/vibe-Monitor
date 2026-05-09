@@ -86,7 +86,7 @@ export function adaptDataHubWorkPoint(item: DataHubWorkPoint): NormalizedStation
   return {
     id: item.id,
     projectName: item.project_name ?? '--',
-    projectCode: null,
+    projectCode: item.project_code ?? null,
     ticketId: '',
     ticketNo: '',
     ticketName: '',
@@ -127,6 +127,7 @@ export function adaptDataHubSkeleton(
       .filter(tower => Number.isFinite(tower.longitude) && Number.isFinite(tower.latitude))
       .map(tower => ({
         id: tower.id,
+        project_code: tower.project_code ?? null,
         single_project_code: tower.single_project_code ?? '',
         tower_no: tower.tower_no ?? '',
         longitude: tower.longitude,
@@ -137,6 +138,7 @@ export function adaptDataHubSkeleton(
       .filter(station => Number.isFinite(station.longitude) && Number.isFinite(station.latitude))
       .map(station => ({
         id: station.id,
+        project_code: station.project_code ?? null,
         single_project_code: station.single_project_code ?? '',
         name: station.single_project_code ?? station.id,
         prj_code: station.project_code ?? null,

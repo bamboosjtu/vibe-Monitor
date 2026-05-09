@@ -9,6 +9,7 @@ export interface DataHubDatesResponse {
 export interface DataHubWorkPoint {
   id: string;
   project_name: string | null;
+  project_code?: string | null;
   longitude: number;
   latitude: number;
   person_count: number | null;
@@ -32,6 +33,7 @@ export interface DataHubMapSummaryResponse {
 export interface DataHubTower {
   id: string;
   tower_id?: string | null;
+  project_code?: string | null;
   single_project_code?: string | null;
   bidding_section_code?: string | null;
   tower_no?: string | null;

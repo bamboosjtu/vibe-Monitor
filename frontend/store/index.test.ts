@@ -2,6 +2,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useAppStore } from './index';
 import type { RawDataResponse, DataParseStats } from '@/types';
 import { setDataSource as setApiDataSource } from '@/api/config';
+import {
+  fetchDomainLineSectionDetail,
+  fetchDomainLineSections,
+  fetchDomainProject,
+  fetchDomainProjectMap,
+  fetchDomainProjectStatus,
+} from '@/api/domainApi';
+
+vi.mock('@/api/domainApi', () => ({
+  fetchDomainProjects: vi.fn(),
+  fetchDomainProject: vi.fn(),
+  fetchDomainProjectMap: vi.fn(),
+  fetchDomainLineSections: vi.fn(),
+  fetchDomainLineSectionDetail: vi.fn(),
+  fetchDomainProjectStatus: vi.fn(),
+}));
 
 describe('App Store', () => {
   beforeEach(() => {
@@ -27,6 +43,28 @@ describe('App Store', () => {
       playSpeed: 1,
       error: null,
       dataSource: 'local',
+      projectSearchKeyword: '',
+      projectListRaw: [],
+      projectList: [],
+      projectListLoading: false,
+      projectListError: null,
+      selectedProjectCode: null,
+      selectedProject: null,
+      selectedProjectLoading: false,
+      selectedProjectError: null,
+      selectedProjectMap: null,
+      selectedProjectMapNormalized: null,
+      lineSections: [],
+      lineSectionsLoading: false,
+      lineSectionsError: null,
+      selectedLineSectionKey: null,
+      selectedLineSection: null,
+      selectedLineSectionLoading: false,
+      selectedLineSectionError: null,
+      projectStatusList: [],
+      projectStatusLoading: false,
+      projectStatusError: null,
+      selectedProjectStatus: 'all',
     });
   });
 
@@ -368,6 +406,366 @@ describe('App Store', () => {
       expect(state.parseStats?.totalRawRecords).toBe(1);
       expect(state.normalizedData[0].projectName).toBe('缓存作业点');
       expect(state.normalizedData[0].riskLevel).toBe(4);
+    });
+  });
+
+  describe('domain project workflow', () => {
+    it('selectProject should update selectedProjectCode and load detail/map/line sections', async () => {
+      vi.mocked(fetchDomainProject).mockResolvedValue({
+        project: {
+          attributes: {
+            project_code: 'PRJ-001',
+            project_name: '示例工程',
+          },
+        },
+        single_projects: [],
+        bidding_sections: [],
+        towers: [],
+        stations: [],
+        line_sections: [],
+        work_points: [],
+        project_progress: [],
+        counts: {},
+        latest_work_date: '2026-05-08',
+        progress_summary: {
+          count: 1,
+          statuses: ['在建'],
+        },
+        warnings: [],
+        cached: true,
+        stale: false,
+        source_watermark: 'wm-detail',
+        refreshed_at: '2026-05-09T10:00:00',
+      } as any);
+      vi.mocked(fetchDomainProjectMap).mockResolvedValue({
+        project: null,
+        towers: [],
+        stations: [],
+        line_sections: [],
+        work_points: [
+          {
+            id: 'dcp:work_point:2026-05-08:meeting-001',
+            project_name: '示例工程',
+            project_code: 'PRJ-001',
+            longitude: 112.93,
+            latitude: 28.22,
+            person_count: 6,
+            risk_level: '2',
+            work_status: 'working',
+            voltage_level: '500kV',
+            city: '长沙',
+            work_date: '2026-05-08',
+          },
+        ],
+        counts: {},
+        latest_work_date: '2026-05-08',
+        progress_summary: {
+          count: 1,
+          statuses: ['在建'],
+        },
+        warnings: [],
+        cached: true,
+        stale: false,
+        source_watermark: 'wm-map',
+        refreshed_at: '2026-05-09T10:00:00',
+      } as any);
+      vi.mocked(fetchDomainLineSections).mockResolvedValue({
+        line_sections: [
+          {
+            line_section_key: 'LS-001',
+            line_section_name: '一区段',
+            project_code: 'PRJ-001',
+            single_project_code: 'SP-001',
+            bidding_section_code: 'BS-001',
+            tower_sequence_count: 2,
+            matched_tower_count: 1,
+            reference_node_count: 1,
+            missing_physical_count: 0,
+            scope_without_tower_count: 0,
+            status: 'reference',
+            source_watermark: 'wm-line',
+          },
+        ],
+        count: 1,
+        cached: true,
+        stale: false,
+        source_watermark: 'wm-line',
+        refreshed_at: '2026-05-09T10:00:00',
+      } as any);
+
+      useAppStore.setState({
+        normalizedData: [
+          {
+            id: 'global-1',
+            projectName: '全局工程',
+            projectCode: 'PRJ-999',
+            ticketId: '',
+            ticketNo: '',
+            ticketName: '',
+            address: '',
+            longitude: 112.5,
+            latitude: 28.2,
+            city: '长沙',
+            personCount: 1,
+            personCountDisplay: 1,
+            leaderName: '',
+            riskLevel: 1,
+            workStatus: 'working',
+            voltageLevel: 'unknown',
+            voltageLevelName: '未知',
+            constructionUnit: '',
+            supervisionUnit: '',
+            workProcedure: '',
+            workSiteName: '',
+            workDate: '2026-05-08',
+            workStartTime: '',
+          },
+        ],
+      });
+
+      await useAppStore.getState().selectProject('PRJ-001');
+
+      const state = useAppStore.getState();
+      const selectedProjectAttributes = (state.selectedProject?.project as any)?.attributes ?? {};
+      expect(state.selectedProjectCode).toBe('PRJ-001');
+      expect(selectedProjectAttributes.project_code).toBe('PRJ-001');
+      expect(state.selectedProjectMap?.work_points).toHaveLength(1);
+      expect(state.lineSections[0].line_section_key).toBe('LS-001');
+      expect(state.filteredData[0].projectCode).toBe('PRJ-001');
+    });
+
+    it('clearSelectedProject should clear selected project and line section state', () => {
+      useAppStore.setState({
+        selectedProjectCode: 'PRJ-001',
+        selectedProject: { project: null } as any,
+        selectedProjectMap: { work_points: [] } as any,
+        selectedProjectMapNormalized: [],
+        selectedLineSectionKey: 'LS-001',
+        selectedLineSection: { line_section: null } as any,
+      });
+
+      useAppStore.getState().clearSelectedProject();
+
+      const state = useAppStore.getState();
+      expect(state.selectedProjectCode).toBeNull();
+      expect(state.selectedProject).toBeNull();
+      expect(state.selectedLineSectionKey).toBeNull();
+      expect(state.selectedLineSection).toBeNull();
+    });
+
+    it('project status filter should filter work points by project_code', () => {
+      useAppStore.setState({
+        normalizedData: [
+          {
+            id: 'p1',
+            projectName: '工程一',
+            projectCode: 'PRJ-001',
+            ticketId: '',
+            ticketNo: '',
+            ticketName: '',
+            address: '',
+            longitude: 112.5,
+            latitude: 28.2,
+            city: '长沙',
+            personCount: 5,
+            personCountDisplay: 5,
+            leaderName: '',
+            riskLevel: 1,
+            workStatus: 'working',
+            voltageLevel: 'unknown',
+            voltageLevelName: '未知',
+            constructionUnit: '',
+            supervisionUnit: '',
+            workProcedure: '',
+            workSiteName: '',
+            workDate: '2026-05-08',
+            workStartTime: '',
+          },
+          {
+            id: 'p2',
+            projectName: '工程二',
+            projectCode: 'PRJ-002',
+            ticketId: '',
+            ticketNo: '',
+            ticketName: '',
+            address: '',
+            longitude: 112.6,
+            latitude: 28.3,
+            city: '株洲',
+            personCount: 4,
+            personCountDisplay: 4,
+            leaderName: '',
+            riskLevel: 2,
+            workStatus: 'working',
+            voltageLevel: 'unknown',
+            voltageLevelName: '未知',
+            constructionUnit: '',
+            supervisionUnit: '',
+            workProcedure: '',
+            workSiteName: '',
+            workDate: '2026-05-08',
+            workStartTime: '',
+          },
+        ],
+        projectStatusList: [
+          {
+            project_code: 'PRJ-001',
+            project_name: '工程一',
+            status: '在建',
+            progress_summary: null,
+            source_watermark: null,
+          },
+          {
+            project_code: 'PRJ-002',
+            project_name: '工程二',
+            status: '投产',
+            progress_summary: null,
+            source_watermark: null,
+          },
+        ],
+      });
+
+      useAppStore.getState().setSelectedProjectStatus('在建');
+
+      const state = useAppStore.getState();
+      expect(state.filteredData).toHaveLength(1);
+      expect(state.filteredData[0].projectCode).toBe('PRJ-001');
+    });
+
+    it('selectedProjectCode should persist after switching date', async () => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/v1/sandbox/map/summary?date=2026-05-03')) {
+          return new Response(
+            JSON.stringify({
+              meta: {
+                date: '2026-05-03',
+                limit: 10000,
+                work_points_count: 1,
+                truncated: false,
+              },
+              work_points: [
+                {
+                  id: 'dcp:work_point:2026-05-03:meeting-010',
+                  project_name: '示例工程',
+                  project_code: 'PRJ-001',
+                  longitude: 112.91,
+                  latitude: 28.21,
+                  person_count: 8,
+                  risk_level: '3',
+                  work_status: 'paused',
+                  voltage_level: '220kV',
+                  city: '株洲',
+                  work_date: '2026-05-03',
+                },
+              ],
+            }),
+          );
+        }
+        throw new Error(`unexpected url: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      vi.mocked(fetchDomainProject).mockResolvedValue({
+        project: { attributes: { project_code: 'PRJ-001' } },
+        single_projects: [],
+        bidding_sections: [],
+        towers: [],
+        stations: [],
+        line_sections: [],
+        work_points: [],
+        project_progress: [],
+        counts: {},
+        latest_work_date: '2026-05-03',
+        progress_summary: {
+          count: 1,
+          statuses: ['在建'],
+        },
+        warnings: [],
+        cached: true,
+        stale: false,
+        source_watermark: 'wm',
+        refreshed_at: '2026-05-09T10:00:00',
+      } as any);
+      vi.mocked(fetchDomainProjectMap).mockResolvedValue({
+        project: null,
+        towers: [],
+        stations: [],
+        line_sections: [],
+        work_points: [],
+        counts: {},
+        latest_work_date: '2026-05-03',
+        progress_summary: {
+          count: 1,
+          statuses: ['在建'],
+        },
+        warnings: [],
+        cached: true,
+        stale: false,
+        source_watermark: 'wm',
+        refreshed_at: '2026-05-09T10:00:00',
+      } as any);
+
+      useAppStore.setState({
+        dataSource: 'datahub',
+        selectedProjectCode: 'PRJ-001',
+      });
+
+      await useAppStore.getState().loadDataByDate('2026-05-03');
+
+      expect(useAppStore.getState().selectedProjectCode).toBe('PRJ-001');
+    });
+
+    it('selectLineSection should load selected line section detail', async () => {
+      vi.mocked(fetchDomainLineSectionDetail).mockResolvedValue({
+        line_section: {
+          attributes: {
+            line_section_name: '一区段',
+          },
+        },
+        tower_sequence: [],
+        matched_towers: [],
+        reference_nodes: [],
+        missing_nodes: [],
+        scope_without_tower: [],
+        warnings: [],
+        cached: true,
+        stale: false,
+        source_watermark: 'wm',
+        refreshed_at: '2026-05-09T10:00:00',
+      } as any);
+
+      await useAppStore.getState().selectLineSection('LS-001');
+
+      const lineSectionAttributes =
+        (useAppStore.getState().selectedLineSection?.line_section as any)?.attributes ?? {};
+      expect(useAppStore.getState().selectedLineSectionKey).toBe('LS-001');
+      expect(lineSectionAttributes.line_section_name).toBe('一区段');
+    });
+
+    it('loadProjectStatus should populate project status list', async () => {
+      vi.mocked(fetchDomainProjectStatus).mockResolvedValue({
+        items: [
+          {
+            project_code: 'PRJ-001',
+            project_name: '示例工程',
+            status: '在建',
+            progress_summary: {
+              count: 1,
+              statuses: ['在建'],
+            },
+            source_watermark: 'wm',
+          },
+        ],
+        count: 1,
+        cached: true,
+        stale: false,
+        source_watermark: 'wm',
+        refreshed_at: '2026-05-09T10:00:00',
+      } as any);
+
+      await useAppStore.getState().loadProjectStatus();
+
+      expect(useAppStore.getState().projectStatusList[0]?.status).toBe('在建');
     });
   });
 });

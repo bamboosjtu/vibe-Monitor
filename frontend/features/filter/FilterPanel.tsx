@@ -4,6 +4,7 @@ import { RISK_COLORS } from '@/constants/layers';
 import { useAppStore } from '@/store';
 import { toggleArrayValue } from '@/lib/filter';
 import { getBootstrap } from '@/api/mapApi';
+import { ProjectSelector } from '@/features/project/ProjectSelector';
 import type { WorkStatus } from '@/types';
 
 const WORK_STATUS_OPTIONS: { value: WorkStatus | 'all'; label: string }[] = [
@@ -35,7 +36,17 @@ const LAYER_OPTIONS: { key: LayerKey; label: string; color: string }[] = [
 ];
 
 export function FilterPanel() {
-  const { filters, setFilters, resetFilters, filteredData, normalizedData, layerVisibility, setLayerVisibility, dataSource } = useAppStore();
+  const {
+    filters,
+    setFilters,
+    resetFilters,
+    filteredData,
+    normalizedData,
+    layerVisibility,
+    setLayerVisibility,
+    dataSource,
+    selectedProjectCode,
+  } = useAppStore();
   
   // M1 Round2: 获取 unresolved 统计
   const [unresolvedCount, setUnresolvedCount] = useState<number | null>(null);
@@ -89,6 +100,14 @@ export function FilterPanel() {
       </div>
 
       <div className="space-y-4 flex-1 overflow-y-auto">
+        <ProjectSelector />
+
+        {selectedProjectCode && normalizedData.some(item => !item.projectCode) ? (
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            部分对象缺少项目编码，未纳入项目过滤。
+          </div>
+        ) : null}
+
         {/* 作业状态筛选 - 单选 */}
         <div className="space-y-2">
           <label className="text-xs text-gray-500 font-medium">作业状态</label>

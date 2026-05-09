@@ -9,6 +9,7 @@ import type {
 import { applyFilters, DEFAULT_FILTER_STATE } from '@/lib/filter';
 import {
   adaptDataHubMapSummary,
+  adaptDataHubWorkPoint,
   adaptMapSummary,
   fetchDataHubDates,
   fetchDataHubMapSummary,
@@ -21,61 +22,186 @@ import {
   setDataSource as setApiDataSource,
 } from '@/api';
 import type { DataSourceMode } from '@/api/config';
+import {
+  fetchDomainLineSectionDetail,
+  fetchDomainLineSections,
+  fetchDomainProject,
+  fetchDomainProjectMap,
+  fetchDomainProjects,
+  fetchDomainProjectStatus,
+  type MonitorLineSectionDetailResponse,
+  type MonitorLineSectionIndexItem,
+  type MonitorProjectDetailResponse,
+  type MonitorProjectIndexItem,
+  type MonitorProjectMapResponse,
+  type MonitorProjectStatusItem,
+} from '@/api/domainApi';
+
+type SelectedObject = { type: 'tower' | 'station' | 'workPoint'; data: any } | null;
+type ProjectStatusFilter = 'all' | 'unknown' | string;
+type SelectedProjectDetail = MonitorProjectDetailResponse & { status: string | null };
+
+interface DerivedFilterState {
+  normalizedData: NormalizedStationMeeting[];
+  filters: FilterState;
+  selectedProjectCode: string | null;
+  selectedProjectMapNormalized: NormalizedStationMeeting[] | null;
+  selectedProjectStatus: ProjectStatusFilter;
+  projectStatusList: MonitorProjectStatusItem[];
+  projectListRaw: MonitorProjectIndexItem[];
+}
+
+function normalizeProjectStatus(status: string | null | undefined): string {
+  return status && status.trim() ? status : 'unknown';
+}
+
+function getProjectStatusCodeSet(
+  selectedProjectStatus: ProjectStatusFilter,
+  projectStatusList: MonitorProjectStatusItem[],
+  projectListRaw: MonitorProjectIndexItem[],
+): Set<string> | null {
+  if (selectedProjectStatus === 'all') {
+    return null;
+  }
+
+  const items =
+    projectStatusList.length > 0
+      ? projectStatusList.map(item => ({
+          project_code: item.project_code,
+          status: item.status,
+        }))
+      : projectListRaw.map(item => ({
+          project_code: item.project_code,
+          status: item.status,
+        }));
+
+  return new Set(
+    items
+      .filter(item => normalizeProjectStatus(item.status) === selectedProjectStatus)
+      .map(item => item.project_code)
+      .filter((value): value is string => Boolean(value)),
+  );
+}
+
+function getWorkPointSource(state: DerivedFilterState): NormalizedStationMeeting[] {
+  if (state.selectedProjectCode && state.selectedProjectMapNormalized) {
+    return state.selectedProjectMapNormalized;
+  }
+  return state.normalizedData;
+}
+
+function computeFilteredData(state: DerivedFilterState): NormalizedStationMeeting[] {
+  const allowedProjectCodes = getProjectStatusCodeSet(
+    state.selectedProjectStatus,
+    state.projectStatusList,
+    state.projectListRaw,
+  );
+
+  const domainFiltered = getWorkPointSource(state).filter(item => {
+    if (state.selectedProjectCode) {
+      if (!item.projectCode) {
+        return false;
+      }
+      if (item.projectCode !== state.selectedProjectCode) {
+        return false;
+      }
+    }
+
+    if (allowedProjectCodes) {
+      if (!item.projectCode) {
+        return false;
+      }
+      if (!allowedProjectCodes.has(item.projectCode)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  return applyFilters(domainFiltered, state.filters);
+}
+
+function resolvePageStatus(
+  normalizedData: NormalizedStationMeeting[],
+  filteredData: NormalizedStationMeeting[],
+): PageStatus {
+  if (normalizedData.length === 0) {
+    return 'empty';
+  }
+  if (filteredData.length === 0) {
+    return 'filtered_empty';
+  }
+  return 'ready';
+}
+
+function filterProjectListByStatus(
+  projects: MonitorProjectIndexItem[],
+  selectedProjectStatus: ProjectStatusFilter,
+): MonitorProjectIndexItem[] {
+  if (selectedProjectStatus === 'all') {
+    return projects;
+  }
+  return projects.filter(
+    project => normalizeProjectStatus(project.status) === selectedProjectStatus,
+  );
+}
+
+function resolveProjectStatus(
+  projectCode: string,
+  projectStatusList: MonitorProjectStatusItem[],
+  projectListRaw: MonitorProjectIndexItem[],
+): string | null {
+  const statusItem = projectStatusList.find(item => item.project_code === projectCode);
+  if (statusItem) {
+    return statusItem.status ?? null;
+  }
+  const projectItem = projectListRaw.find(item => item.project_code === projectCode);
+  return projectItem?.status ?? null;
+}
 
 export interface AppState {
-  // 页面状态
   pageStatus: PageStatus;
   setPageStatus: (status: PageStatus) => void;
-  
-  // 错误信息
+
   error: string | null;
   setError: (error: string | null) => void;
-  
-  // 数据层
+
   rawData: RawDataResponse | null;
   setRawData: (data: RawDataResponse | null) => void;
-  
+
   normalizedData: NormalizedStationMeeting[];
   setNormalizedData: (data: NormalizedStationMeeting[]) => void;
-  
+
   filteredData: NormalizedStationMeeting[];
-  
+
   parseStats: DataParseStats | null;
   setParseStats: (stats: DataParseStats | null) => void;
-  
-  // 筛选状态
+
   filters: FilterState;
   setFilters: (filters: Partial<FilterState>) => void;
   resetFilters: () => void;
-  
-  // 选中项状态
+
   selectedItem: NormalizedStationMeeting | null;
   setSelectedItem: (item: NormalizedStationMeeting | null) => void;
   clearSelectedItem: () => void;
-  
-  // M1R2: 统一详情对象（支持 Tower/Station/WorkPoint，已移除 Line）
-  selectedObject: { type: 'tower' | 'station' | 'workPoint'; data: any } | null;
-  setSelectedObject: (obj: { type: 'tower' | 'station' | 'workPoint'; data: any } | null) => void;
+
+  selectedObject: SelectedObject;
+  setSelectedObject: (obj: SelectedObject) => void;
   clearSelectedObject: () => void;
-  
-  // ========== 时间轴相关状态 (MVP 第二轮新增) ==========
-  // 当前日期
+
   currentDate: string | null;
   setCurrentDate: (date: string) => void;
-  
-  // 可用日期列表
+
   availableDates: string[];
   setAvailableDates: (dates: string[]) => void;
-  
-  // 时间轴播放状态
+
   isPlaying: boolean;
   setIsPlaying: (playing: boolean) => void;
-  
-  // 播放速度（天/秒）
+
   playSpeed: number;
   setPlaySpeed: (speed: number) => void;
-  
-  // 数据加载流程
+
   startLoading: () => void;
   loadSuccess: (params: {
     rawData: RawDataResponse;
@@ -85,182 +211,238 @@ export interface AppState {
   }) => void;
   loadError: (error: string, preserveData?: boolean) => void;
   resetData: () => void;
-  
-  // 按日期加载数据
+
   loadDataByDate: (date: string, isInitialLoad?: boolean) => Promise<void>;
-  
-  // ========== M0: API 数据源支持 ==========
-  // API 数据加载（从后端 API 获取）
   loadFromApi: () => Promise<void>;
-  // DataHub 数据加载（从 DataHub sandbox API 获取）
   loadFromDataHub: () => Promise<void>;
-  // 数据源类型
   dataSource: DataSourceMode;
   setDataSource: (source: DataSourceMode) => void;
-  
-  // ========== M1R2: 图层显隐控制（已移除 line）==========
+
   layerVisibility: {
     tower: boolean;
     workPoint: boolean;
     station: boolean;
   };
   setLayerVisibility: (layer: keyof AppState['layerVisibility'], visible: boolean) => void;
+
+  projectSearchKeyword: string;
+  projectListRaw: MonitorProjectIndexItem[];
+  projectList: MonitorProjectIndexItem[];
+  projectListLoading: boolean;
+  projectListError: string | null;
+  selectedProjectCode: string | null;
+  selectedProject: SelectedProjectDetail | null;
+  selectedProjectLoading: boolean;
+  selectedProjectError: string | null;
+  selectedProjectMap: MonitorProjectMapResponse | null;
+  selectedProjectMapNormalized: NormalizedStationMeeting[] | null;
+  lineSections: MonitorLineSectionIndexItem[];
+  lineSectionsLoading: boolean;
+  lineSectionsError: string | null;
+  selectedLineSectionKey: string | null;
+  selectedLineSection: MonitorLineSectionDetailResponse | null;
+  selectedLineSectionLoading: boolean;
+  selectedLineSectionError: string | null;
+  projectStatusList: MonitorProjectStatusItem[];
+  projectStatusLoading: boolean;
+  projectStatusError: string | null;
+  selectedProjectStatus: ProjectStatusFilter;
+
+  loadDomainProjects: (keyword?: string) => Promise<void>;
+  selectProject: (projectCode: string) => Promise<void>;
+  clearSelectedProject: () => void;
+  loadProjectDetail: (projectCode: string) => Promise<void>;
+  loadProjectMap: (projectCode: string) => Promise<void>;
+  loadProjectLineSections: (projectCode: string) => Promise<void>;
+  selectLineSection: (lineSectionKey: string) => Promise<void>;
+  clearSelectedLineSection: () => void;
+  loadProjectStatus: () => Promise<void>;
+  setSelectedProjectStatus: (status: ProjectStatusFilter) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   pageStatus: 'idle',
-  setPageStatus: (status) => set({ pageStatus: status }),
-  
+  setPageStatus: status => set({ pageStatus: status }),
+
   error: null,
-  setError: (error) => set({ error }),
-  
+  setError: error => set({ error }),
+
   rawData: null,
-  setRawData: (data) => set({ rawData: data }),
-  
+  setRawData: data => set({ rawData: data }),
+
   normalizedData: [],
-  setNormalizedData: (data) => {
-    const { filters } = get();
-    const filteredData = applyFilters(data, filters);
-    set({ 
-      normalizedData: data, 
-      filteredData,
-      pageStatus: filteredData.length === 0 ? 'empty' : 'ready',
-    });
-  },
-  
+  setNormalizedData: data =>
+    set(state => {
+      const filteredData = computeFilteredData({
+        normalizedData: data,
+        filters: state.filters,
+        selectedProjectCode: state.selectedProjectCode,
+        selectedProjectMapNormalized: state.selectedProjectMapNormalized,
+        selectedProjectStatus: state.selectedProjectStatus,
+        projectStatusList: state.projectStatusList,
+        projectListRaw: state.projectListRaw,
+      });
+      return {
+        normalizedData: data,
+        filteredData,
+        pageStatus: resolvePageStatus(data, filteredData),
+      };
+    }),
+
   filteredData: [],
-  
+
   parseStats: null,
-  setParseStats: (stats) => set({ parseStats: stats }),
-  
+  setParseStats: stats => set({ parseStats: stats }),
+
   filters: DEFAULT_FILTER_STATE,
-  setFilters: (newFilters) => {
-    const { normalizedData, filters, selectedItem } = get();
-    const updatedFilters = { ...filters, ...newFilters };
-    const filteredData = applyFilters(normalizedData, updatedFilters);
-    
-    // 检查选中项是否仍在筛选结果中
-    const selectedStillVisible = selectedItem 
-      ? filteredData.some(item => item.id === selectedItem.id)
-      : false;
-    
-    set({
-      filters: updatedFilters,
-      filteredData,
-      pageStatus: filteredData.length === 0 ? 'filtered_empty' : 'ready',
-      selectedItem: selectedStillVisible ? selectedItem : null,
-    });
-  },
-  resetFilters: () => {
-    const { normalizedData } = get();
-    set({
-      filters: DEFAULT_FILTER_STATE,
-      filteredData: normalizedData,
-      pageStatus: normalizedData.length === 0 ? 'empty' : 'ready',
-    });
-  },
-  
+  setFilters: newFilters =>
+    set(state => {
+      const filters = { ...state.filters, ...newFilters };
+      const filteredData = computeFilteredData({
+        normalizedData: state.normalizedData,
+        filters,
+        selectedProjectCode: state.selectedProjectCode,
+        selectedProjectMapNormalized: state.selectedProjectMapNormalized,
+        selectedProjectStatus: state.selectedProjectStatus,
+        projectStatusList: state.projectStatusList,
+        projectListRaw: state.projectListRaw,
+      });
+      const selectedStillVisible = state.selectedItem
+        ? filteredData.some(item => item.id === state.selectedItem?.id)
+        : false;
+
+      return {
+        filters,
+        filteredData,
+        pageStatus: resolvePageStatus(state.normalizedData, filteredData),
+        selectedItem: selectedStillVisible ? state.selectedItem : null,
+      };
+    }),
+  resetFilters: () =>
+    set(state => {
+      const filteredData = computeFilteredData({
+        normalizedData: state.normalizedData,
+        filters: DEFAULT_FILTER_STATE,
+        selectedProjectCode: state.selectedProjectCode,
+        selectedProjectMapNormalized: state.selectedProjectMapNormalized,
+        selectedProjectStatus: state.selectedProjectStatus,
+        projectStatusList: state.projectStatusList,
+        projectListRaw: state.projectListRaw,
+      });
+      return {
+        filters: DEFAULT_FILTER_STATE,
+        filteredData,
+        pageStatus: resolvePageStatus(state.normalizedData, filteredData),
+      };
+    }),
+
   selectedItem: null,
-  setSelectedItem: (item) => set({ selectedItem: item }),
+  setSelectedItem: item => set({ selectedItem: item }),
   clearSelectedItem: () => set({ selectedItem: null }),
-  
-  // M1 Round2: 统一详情对象
+
   selectedObject: null,
-  setSelectedObject: (obj) => set({ selectedObject: obj }),
+  setSelectedObject: obj => set({ selectedObject: obj }),
   clearSelectedObject: () => set({ selectedObject: null }),
-  
-  // ========== 时间轴相关状态实现 ==========
+
   currentDate: null,
-  setCurrentDate: (date) => set({ currentDate: date }),
-  
+  setCurrentDate: date => set({ currentDate: date }),
+
   availableDates: [],
-  setAvailableDates: (dates) => set({ availableDates: dates }),
-  
+  setAvailableDates: dates => set({ availableDates: dates }),
+
   isPlaying: false,
-  setIsPlaying: (playing) => set({ isPlaying: playing }),
-  
+  setIsPlaying: playing => set({ isPlaying: playing }),
+
   playSpeed: 1,
-  setPlaySpeed: (speed) => set({ playSpeed: speed }),
-  
-  startLoading: () => set({ 
-    pageStatus: 'loading', 
-    error: null 
-  }),
-  
-  loadSuccess: ({ rawData, normalizedData, stats, date }) => {
-    const { filters, selectedItem } = get();
-    const filteredData = applyFilters(normalizedData, filters);
-    const pageStatus = filteredData.length === 0 
-      ? (normalizedData.length === 0 ? 'empty' : 'filtered_empty') 
-      : 'ready';
-    
-    // 检查选中项是否在新日期的数据中仍然存在
-    const selectedStillExists = selectedItem 
-      ? normalizedData.some(item => item.id === selectedItem.id)
-      : false;
-    
-    set({
-      pageStatus,
-      rawData,
-      normalizedData,
-      filteredData,
-      parseStats: stats,
-      currentDate: date || get().currentDate,
-      // 若选中项在新日期不存在，则清空选中态
-      selectedItem: selectedStillExists ? selectedItem : null,
-      error: null,
-    });
-  },
-  
+  setPlaySpeed: speed => set({ playSpeed: speed }),
+
+  startLoading: () => set({ pageStatus: 'loading', error: null }),
+
+  loadSuccess: ({ rawData, normalizedData, stats, date }) =>
+    set(state => {
+      const filteredData = computeFilteredData({
+        normalizedData,
+        filters: state.filters,
+        selectedProjectCode: state.selectedProjectCode,
+        selectedProjectMapNormalized: state.selectedProjectMapNormalized,
+        selectedProjectStatus: state.selectedProjectStatus,
+        projectStatusList: state.projectStatusList,
+        projectListRaw: state.projectListRaw,
+      });
+      const selectedStillVisible = state.selectedItem
+        ? filteredData.some(item => item.id === state.selectedItem?.id)
+        : false;
+
+      return {
+        pageStatus: resolvePageStatus(normalizedData, filteredData),
+        rawData,
+        normalizedData,
+        filteredData,
+        parseStats: stats,
+        currentDate: date || state.currentDate,
+        selectedItem: selectedStillVisible ? state.selectedItem : null,
+        error: null,
+      };
+    }),
+
   loadError: (errorMessage, preserveData = false) => {
     if (preserveData) {
-      // 保留当前数据，仅显示错误（用于日期切换失败场景）
       set({
-        pageStatus: 'ready', // 保持 ready 状态，让用户可以继续操作
-        error: errorMessage, // 显示错误信息
-      });
-    } else {
-      // 完全重置（用于初始加载失败场景）
-      set({
-        pageStatus: 'error',
+        pageStatus: 'ready',
         error: errorMessage,
-        rawData: null,
-        normalizedData: [],
-        filteredData: [],
-        parseStats: null,
-        selectedItem: null,
       });
+      return;
     }
+
+    set({
+      pageStatus: 'error',
+      error: errorMessage,
+      rawData: null,
+      normalizedData: [],
+      filteredData: [],
+      parseStats: null,
+      selectedItem: null,
+    });
   },
-  
-  resetData: () => set({
-    pageStatus: 'idle',
-    error: null,
-    rawData: null,
-    normalizedData: [],
-    filteredData: [],
-    parseStats: null,
-    filters: DEFAULT_FILTER_STATE,
-    selectedItem: null,
-    currentDate: null,
-    isPlaying: false,
-  }),
-  
-  // 按日期加载数据
+
+  resetData: () =>
+    set({
+      pageStatus: 'idle',
+      error: null,
+      rawData: null,
+      normalizedData: [],
+      filteredData: [],
+      parseStats: null,
+      filters: DEFAULT_FILTER_STATE,
+      selectedItem: null,
+      currentDate: null,
+      isPlaying: false,
+      selectedProjectCode: null,
+      selectedProject: null,
+      selectedProjectError: null,
+      selectedProjectMap: null,
+      selectedProjectMapNormalized: null,
+      lineSections: [],
+      lineSectionsError: null,
+      selectedLineSectionKey: null,
+      selectedLineSection: null,
+      selectedLineSectionError: null,
+    }),
+
   loadDataByDate: async (date: string, isInitialLoad = false) => {
     const { dataSource, loadSuccess, loadError } = get();
 
-    // 日期切换时不再设置全局 loading 状态，避免触发整页重渲染
-    // 改为在 Timeline 组件中通过 isLoading 状态显示局部 loading
-    // 保持 pageStatus 为 'ready'，确保 UI 骨架不闪
-
     try {
+      let resolvedDate = date;
+
       if (dataSource === 'datahub' || dataSource === 'monitor_backend') {
-        const remoteSummary = dataSource === 'monitor_backend'
-          ? await fetchMonitorBackendMapSummary(date)
-          : await fetchDataHubMapSummary(date);
+        const remoteSummary =
+          dataSource === 'monitor_backend'
+            ? await fetchMonitorBackendMapSummary(date)
+            : await fetchDataHubMapSummary(date);
         const workPoints = getSummaryWorkPoints(remoteSummary);
         const normalizedData = adaptDataHubMapSummary(remoteSummary);
+        resolvedDate = getSummaryDate(remoteSummary, date) ?? date;
 
         loadSuccess({
           rawData: null as any,
@@ -276,64 +458,64 @@ export const useAppStore = create<AppState>((set, get) => ({
               zeroCoordinates: 0,
             },
           },
-          date: getSummaryDate(remoteSummary, date) ?? undefined,
+          date: resolvedDate,
         });
-        return;
+      } else {
+        const { loadAndParseByDate } = await import('@/lib/dateDataLoader');
+        const result = await loadAndParseByDate(date);
+        resolvedDate = result.date || date;
+
+        loadSuccess({
+          rawData: result.rawData,
+          normalizedData: result.normalizedData,
+          stats: result.stats,
+          date: result.date,
+        });
       }
 
-      // 动态导入避免循环依赖
-      const { loadAndParseByDate } = await import('@/lib/dateDataLoader');
-      const result = await loadAndParseByDate(date);
-
-      loadSuccess({
-        rawData: result.rawData,
-        normalizedData: result.normalizedData,
-        stats: result.stats,
-        date: result.date,
-      });
+      if (get().selectedProjectCode) {
+        const projectCode = get().selectedProjectCode!;
+        await Promise.allSettled([
+          get().loadProjectDetail(projectCode),
+          get().loadProjectMap(projectCode),
+        ]);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '未知错误';
-      // 如果是初始加载失败，完全重置；如果是日期切换失败，保留当前数据
       loadError(errorMessage, !isInitialLoad);
       console.error('[Date Load Error]', err);
     }
   },
-  
-  // ========== API 数据源支持 ==========
+
   dataSource: getApiConfig().source,
-  setDataSource: (source) => {
+  setDataSource: source => {
     setApiDataSource(source);
     set({ dataSource: source });
   },
-  
+
   loadFromApi: async () => {
     const { loadSuccess, loadError, startLoading, setAvailableDates, setCurrentDate } = get();
-    
+
     startLoading();
-    
+
     try {
-      // M1R2: 同时加载日期清单和地图数据
       const [{ loadDateManifest }, summary] = await Promise.all([
         import('@/lib/dateDataLoader'),
         getMapSummary(),
       ]);
-      
-      // 加载日期清单
+
       const manifest = await loadDateManifest();
       setAvailableDates(manifest.dates);
-      
-      // 使用最新日期作为当前日期
+
       const latestDate = manifest.dates[manifest.dates.length - 1] || null;
       if (latestDate) {
         setCurrentDate(latestDate);
       }
-      
-      // 转换为前端数据格式
+
       const normalizedData = adaptMapSummary(summary.data);
-      
-      // 调用 loadSuccess 更新 store
+
       loadSuccess({
-        rawData: null as any, // API 模式无原始数据
+        rawData: null as any,
         normalizedData,
         stats: {
           totalRawRecords: normalizedData.length,
@@ -403,8 +585,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error('[DataHub Load Error]', err);
     }
   },
-  
-  // ========== M1R2: 图层显隐控制（已移除 line）==========
+
   layerVisibility: {
     tower: true,
     workPoint: true,
@@ -419,4 +600,362 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     });
   },
+
+  projectSearchKeyword: '',
+  projectListRaw: [],
+  projectList: [],
+  projectListLoading: false,
+  projectListError: null,
+  selectedProjectCode: null,
+  selectedProject: null,
+  selectedProjectLoading: false,
+  selectedProjectError: null,
+  selectedProjectMap: null,
+  selectedProjectMapNormalized: null,
+  lineSections: [],
+  lineSectionsLoading: false,
+  lineSectionsError: null,
+  selectedLineSectionKey: null,
+  selectedLineSection: null,
+  selectedLineSectionLoading: false,
+  selectedLineSectionError: null,
+  projectStatusList: [],
+  projectStatusLoading: false,
+  projectStatusError: null,
+  selectedProjectStatus: 'all',
+
+  loadDomainProjects: async keyword => {
+    const resolvedKeyword = keyword ?? get().projectSearchKeyword;
+    set({
+      projectListLoading: true,
+      projectListError: null,
+      projectSearchKeyword: resolvedKeyword,
+    });
+
+    try {
+      const response = await fetchDomainProjects({
+        keyword: resolvedKeyword || undefined,
+        limit: 100,
+        offset: 0,
+      });
+      set(state => ({
+        projectListRaw: response.projects,
+        projectList: filterProjectListByStatus(
+          response.projects,
+          state.selectedProjectStatus,
+        ),
+        projectListLoading: false,
+        projectListError: null,
+      }));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '项目列表加载失败';
+      set({
+        projectListLoading: false,
+        projectListError: errorMessage,
+      });
+    }
+  },
+
+  selectProject: async projectCode => {
+    set(state => {
+      const filteredData = computeFilteredData({
+        normalizedData: state.normalizedData,
+        filters: state.filters,
+        selectedProjectCode: projectCode,
+        selectedProjectMapNormalized: null,
+        selectedProjectStatus: state.selectedProjectStatus,
+        projectStatusList: state.projectStatusList,
+        projectListRaw: state.projectListRaw,
+      });
+      return {
+        selectedProjectCode: projectCode,
+        selectedProject: null,
+        selectedProjectLoading: true,
+        selectedProjectError: null,
+        selectedProjectMap: null,
+        selectedProjectMapNormalized: null,
+        lineSections: [],
+        lineSectionsLoading: true,
+        lineSectionsError: null,
+        selectedLineSectionKey: null,
+        selectedLineSection: null,
+        selectedLineSectionLoading: false,
+        selectedLineSectionError: null,
+        selectedItem: null,
+        selectedObject: null,
+        filteredData,
+        pageStatus: resolvePageStatus(state.normalizedData, filteredData),
+      };
+    });
+
+    await Promise.allSettled([
+      get().loadProjectDetail(projectCode),
+      get().loadProjectMap(projectCode),
+      get().loadProjectLineSections(projectCode),
+    ]);
+  },
+
+  clearSelectedProject: () =>
+    set(state => {
+      const filteredData = computeFilteredData({
+        normalizedData: state.normalizedData,
+        filters: state.filters,
+        selectedProjectCode: null,
+        selectedProjectMapNormalized: null,
+        selectedProjectStatus: state.selectedProjectStatus,
+        projectStatusList: state.projectStatusList,
+        projectListRaw: state.projectListRaw,
+      });
+      return {
+        selectedProjectCode: null,
+        selectedProject: null,
+        selectedProjectLoading: false,
+        selectedProjectError: null,
+        selectedProjectMap: null,
+        selectedProjectMapNormalized: null,
+        lineSections: [],
+        lineSectionsLoading: false,
+        lineSectionsError: null,
+        selectedLineSectionKey: null,
+        selectedLineSection: null,
+        selectedLineSectionLoading: false,
+        selectedLineSectionError: null,
+        selectedItem: null,
+        selectedObject: null,
+        filteredData,
+        pageStatus: resolvePageStatus(state.normalizedData, filteredData),
+      };
+    }),
+
+  loadProjectDetail: async projectCode => {
+    set({
+      selectedProjectLoading: true,
+      selectedProjectError: null,
+    });
+
+    try {
+      const response = await fetchDomainProject(projectCode, {
+        date: get().currentDate || undefined,
+        include_work_points: true,
+        include_towers: true,
+        include_stations: true,
+        include_line_sections: true,
+      });
+
+      if (get().selectedProjectCode !== projectCode) {
+        return;
+      }
+
+      set(state => ({
+        selectedProject: {
+          ...response,
+          status: resolveProjectStatus(
+            projectCode,
+            state.projectStatusList,
+            state.projectListRaw,
+          ),
+        },
+        selectedProjectLoading: false,
+        selectedProjectError: null,
+      }));
+    } catch (err) {
+      if (get().selectedProjectCode !== projectCode) {
+        return;
+      }
+      set({
+        selectedProjectLoading: false,
+        selectedProjectError:
+          err instanceof Error ? err.message : '项目详情加载失败',
+      });
+    }
+  },
+
+  loadProjectMap: async projectCode => {
+    try {
+      const response = await fetchDomainProjectMap(projectCode, {
+        date: get().currentDate || undefined,
+      });
+
+      if (get().selectedProjectCode !== projectCode) {
+        return;
+      }
+
+      const normalizedWorkPoints = response.work_points
+        .map(item => adaptDataHubWorkPoint(item as any))
+        .filter(
+          item => Number.isFinite(item.longitude) && Number.isFinite(item.latitude),
+        );
+
+      set(state => {
+        const filteredData = computeFilteredData({
+          normalizedData: state.normalizedData,
+          filters: state.filters,
+          selectedProjectCode: state.selectedProjectCode,
+          selectedProjectMapNormalized: normalizedWorkPoints,
+          selectedProjectStatus: state.selectedProjectStatus,
+          projectStatusList: state.projectStatusList,
+          projectListRaw: state.projectListRaw,
+        });
+        return {
+          selectedProjectMap: response,
+          selectedProjectMapNormalized: normalizedWorkPoints,
+          filteredData,
+          pageStatus: resolvePageStatus(state.normalizedData, filteredData),
+        };
+      });
+    } catch (err) {
+      if (get().selectedProjectCode !== projectCode) {
+        return;
+      }
+      set({
+        selectedProjectError:
+          err instanceof Error ? err.message : '项目地图数据加载失败',
+      });
+    }
+  },
+
+  loadProjectLineSections: async projectCode => {
+    set({
+      lineSectionsLoading: true,
+      lineSectionsError: null,
+    });
+
+    try {
+      const response = await fetchDomainLineSections({
+        project_code: projectCode,
+        limit: 100,
+        offset: 0,
+      });
+
+      if (get().selectedProjectCode !== projectCode) {
+        return;
+      }
+
+      set({
+        lineSections: response.line_sections,
+        lineSectionsLoading: false,
+        lineSectionsError: null,
+      });
+    } catch (err) {
+      if (get().selectedProjectCode !== projectCode) {
+        return;
+      }
+      set({
+        lineSectionsLoading: false,
+        lineSectionsError:
+          err instanceof Error ? err.message : '区段列表加载失败',
+      });
+    }
+  },
+
+  selectLineSection: async lineSectionKey => {
+    set({
+      selectedLineSectionKey: lineSectionKey,
+      selectedLineSectionLoading: true,
+      selectedLineSectionError: null,
+      selectedLineSection: null,
+      selectedItem: null,
+      selectedObject: null,
+    });
+
+    try {
+      const response = await fetchDomainLineSectionDetail(lineSectionKey);
+
+      if (get().selectedLineSectionKey !== lineSectionKey) {
+        return;
+      }
+
+      set({
+        selectedLineSection: response,
+        selectedLineSectionLoading: false,
+        selectedLineSectionError: null,
+      });
+    } catch (err) {
+      if (get().selectedLineSectionKey !== lineSectionKey) {
+        return;
+      }
+      set({
+        selectedLineSectionLoading: false,
+        selectedLineSectionError:
+          err instanceof Error ? err.message : '区段详情加载失败',
+      });
+    }
+  },
+
+  clearSelectedLineSection: () =>
+    set({
+      selectedLineSectionKey: null,
+      selectedLineSection: null,
+      selectedLineSectionLoading: false,
+      selectedLineSectionError: null,
+    }),
+
+  loadProjectStatus: async () => {
+    set({
+      projectStatusLoading: true,
+      projectStatusError: null,
+    });
+
+    try {
+      const response = await fetchDomainProjectStatus();
+      set(state => {
+        const filteredData = computeFilteredData({
+          normalizedData: state.normalizedData,
+          filters: state.filters,
+          selectedProjectCode: state.selectedProjectCode,
+          selectedProjectMapNormalized: state.selectedProjectMapNormalized,
+          selectedProjectStatus: state.selectedProjectStatus,
+          projectStatusList: response.items,
+          projectListRaw: state.projectListRaw,
+        });
+
+        return {
+          projectStatusList: response.items,
+          projectStatusLoading: false,
+          projectStatusError: null,
+          projectList: filterProjectListByStatus(
+            state.projectListRaw,
+            state.selectedProjectStatus,
+          ),
+          selectedProject: state.selectedProject
+            ? {
+                ...state.selectedProject,
+                status: resolveProjectStatus(
+                  state.selectedProjectCode ?? '',
+                  response.items,
+                  state.projectListRaw,
+                ),
+              }
+            : null,
+          filteredData,
+          pageStatus: resolvePageStatus(state.normalizedData, filteredData),
+        };
+      });
+    } catch (err) {
+      set({
+        projectStatusLoading: false,
+        projectStatusError:
+          err instanceof Error ? err.message : '项目状态加载失败',
+      });
+    }
+  },
+
+  setSelectedProjectStatus: status =>
+    set(state => {
+      const filteredData = computeFilteredData({
+        normalizedData: state.normalizedData,
+        filters: state.filters,
+        selectedProjectCode: state.selectedProjectCode,
+        selectedProjectMapNormalized: state.selectedProjectMapNormalized,
+        selectedProjectStatus: status,
+        projectStatusList: state.projectStatusList,
+        projectListRaw: state.projectListRaw,
+      });
+      return {
+        selectedProjectStatus: status,
+        projectList: filterProjectListByStatus(state.projectListRaw, status),
+        filteredData,
+        pageStatus: resolvePageStatus(state.normalizedData, filteredData),
+      };
+    }),
 }));
