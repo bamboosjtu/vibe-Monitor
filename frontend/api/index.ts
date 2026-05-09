@@ -6,3 +6,4 @@ export * from './mapApi';
 export * from './adapter';
 export * from './datahubApi';
 export * from './monitorBackendApi';
+export * from './domainApi';

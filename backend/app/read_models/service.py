@@ -289,6 +289,339 @@ class MonitorReadModelService:
             builder=builder,
         )
 
+    def refresh_domain_projects(
+        self,
+        *,
+        keyword: str | None = None,
+        status: str | None = None,
+        limit: int = 1000,
+        offset: int = 0,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        query = {
+            "keyword": keyword or "",
+            "status": status or "",
+            "limit": limit,
+            "offset": offset,
+        }
+        filters_hash = _json_hash(query)
+        cache_key = "domain:projects" if not any([keyword, status, offset]) else f"domain:projects:{filters_hash}"
+        source_watermark = self._watermark_with_cache_fallback(
+            cache_key,
+            "project_preconstruction",
+            "tower",
+            "station",
+            "line_section",
+            "daily_meeting",
+            "year_progress",
+        )
+        return self._resolve_cached_or_refresh(
+            cache_key=cache_key,
+            cache_type="domain_projects",
+            source_watermark=source_watermark,
+            filters_hash=filters_hash,
+            force=force,
+            builder=lambda: self._build_domain_projects_view(
+                keyword=keyword,
+                status=status,
+                limit=limit,
+                offset=offset,
+                source_watermark=source_watermark,
+            ),
+        )
+
+    def _build_domain_projects_view(
+        self,
+        *,
+        keyword: str | None,
+        status: str | None,
+        limit: int,
+        offset: int,
+        source_watermark: str,
+    ) -> dict[str, Any]:
+        projects = self.datahub.get_domain_projects(
+            keyword=keyword,
+            limit=limit,
+            offset=offset,
+        )
+        progress = self.datahub.get_domain_year_progress(limit=5000, offset=0)
+        progress_by_project: dict[str, list[dict[str, Any]]] = {}
+        for item in progress.get("items", []):
+            code = item.get("project_code")
+            if code:
+                progress_by_project.setdefault(str(code), []).append(item)
+
+        items = []
+        for item in projects.get("items", []):
+            project_code = item.get("project_code")
+            progress_items = progress_by_project.get(str(project_code), [])
+            statuses = sorted(
+                {
+                    str(progress_item.get("status"))
+                    for progress_item in progress_items
+                    if progress_item.get("status") not in (None, "")
+                }
+            )
+            resolved_status = statuses[0] if len(statuses) == 1 else None
+            if status and resolved_status != status:
+                continue
+            items.append(
+                {
+                    "project_code": project_code,
+                    "project_name": item.get("project_name"),
+                    "status": resolved_status,
+                    "single_project_count": item.get("single_project_count", 0),
+                    "bidding_section_count": item.get("bidding_section_count", 0),
+                    "tower_count": item.get("tower_count", 0),
+                    "station_count": item.get("station_count", 0),
+                    "line_section_count": item.get("line_section_count", 0),
+                    "work_point_count": item.get("work_point_count", 0),
+                    "latest_work_date": item.get("latest_work_date"),
+                    "progress_summary": {
+                        "count": len(progress_items),
+                        "statuses": statuses,
+                    },
+                    "source_watermark": source_watermark,
+                }
+            )
+        return {
+            "projects": items,
+            "count": len(items),
+            "filters": {"keyword": keyword, "status": status, "limit": limit, "offset": offset},
+        }
+
+    def refresh_domain_project_detail(
+        self,
+        *,
+        project_code: str,
+        date: str | None = None,
+        include_work_points: bool = True,
+        include_towers: bool = True,
+        include_stations: bool = True,
+        include_line_sections: bool = True,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        query = {
+            "project_code": project_code,
+            "date": date or "",
+            "include_work_points": include_work_points,
+            "include_towers": include_towers,
+            "include_stations": include_stations,
+            "include_line_sections": include_line_sections,
+        }
+        filters_hash = _json_hash(query)
+        cache_key = f"domain:project:{project_code}"
+        source_watermark = self._watermark_with_cache_fallback(
+            cache_key,
+            "project_preconstruction",
+            "tower",
+            "station",
+            "line_section",
+            "daily_meeting",
+            "year_progress",
+        )
+        return self._resolve_cached_or_refresh(
+            cache_key=cache_key,
+            cache_type="domain_project_detail",
+            source_watermark=source_watermark,
+            filters_hash=filters_hash,
+            force=force,
+            builder=lambda: self._build_domain_project_detail_view(
+                project_code=project_code,
+                date=date,
+                include_work_points=include_work_points,
+                include_towers=include_towers,
+                include_stations=include_stations,
+                include_line_sections=include_line_sections,
+                source_watermark=source_watermark,
+            ),
+        )
+
+    def _build_domain_project_detail_view(
+        self,
+        *,
+        project_code: str,
+        date: str | None,
+        include_work_points: bool,
+        include_towers: bool,
+        include_stations: bool,
+        include_line_sections: bool,
+        source_watermark: str,
+    ) -> dict[str, Any]:
+        view = self.datahub.get_domain_project_view(
+            project_code,
+            date=date,
+            include_work_points=include_work_points,
+            limit=10000,
+        )
+        line_sections_index = self.datahub.get_domain_line_sections(
+            project_code=project_code,
+            limit=5000,
+            offset=0,
+        )
+        line_index_by_key = {
+            item["line_section_key"]: item for item in line_sections_index.get("items", [])
+        }
+        line_sections = []
+        warnings: list[str] = []
+        for item in view.get("line_sections", []):
+            key = item.get("entity_key")
+            stats = line_index_by_key.get(str(key), {})
+            merged = {**item, "sequence_stats": stats}
+            if stats.get("missing_physical_count", 0) > 0:
+                warnings.append(f"line_section missing tower entities: {key}")
+            if stats.get("scope_without_tower_count", 0) > 0:
+                warnings.append(f"line_section scope has no tower entities: {key}")
+            line_sections.append(merged)
+
+        return {
+            "project": view.get("project"),
+            "single_projects": view.get("hierarchy", {}).get("single_projects", []),
+            "bidding_sections": view.get("hierarchy", {}).get("bidding_sections", []),
+            "towers": view.get("towers", []) if include_towers else [],
+            "stations": view.get("stations", []) if include_stations else [],
+            "line_sections": line_sections if include_line_sections else [],
+            "work_points": view.get("work_points", []) if include_work_points else [],
+            "project_progress": view.get("project_progress", []),
+            "counts": view.get("summary", {}),
+            "warnings": sorted(set(warnings)),
+            "source_watermark": source_watermark,
+        }
+
+    def refresh_domain_line_sections(
+        self,
+        *,
+        project_code: str | None = None,
+        single_project_code: str | None = None,
+        bidding_section_code: str | None = None,
+        limit: int = 1000,
+        offset: int = 0,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        query = {
+            "project_code": project_code or "",
+            "single_project_code": single_project_code or "",
+            "bidding_section_code": bidding_section_code or "",
+            "limit": limit,
+            "offset": offset,
+        }
+        filters_hash = _json_hash(query)
+        cache_key = f"domain:line_sections:{filters_hash}"
+        source_watermark = self._watermark_with_cache_fallback(
+            cache_key, "line_section", "tower", "project_preconstruction"
+        )
+        return self._resolve_cached_or_refresh(
+            cache_key=cache_key,
+            cache_type="domain_line_sections",
+            source_watermark=source_watermark,
+            filters_hash=filters_hash,
+            force=force,
+            builder=lambda: self._build_domain_line_sections_view(
+                project_code=project_code,
+                single_project_code=single_project_code,
+                bidding_section_code=bidding_section_code,
+                limit=limit,
+                offset=offset,
+                source_watermark=source_watermark,
+            ),
+        )
+
+    def _build_domain_line_sections_view(
+        self,
+        *,
+        project_code: str | None,
+        single_project_code: str | None,
+        bidding_section_code: str | None,
+        limit: int,
+        offset: int,
+        source_watermark: str,
+    ) -> dict[str, Any]:
+        response = self.datahub.get_domain_line_sections(
+            project_code=project_code,
+            single_project_code=single_project_code,
+            bidding_section_code=bidding_section_code,
+            limit=limit,
+            offset=offset,
+        )
+        items = []
+        for item in response.get("items", []):
+            if item.get("missing_physical_count", 0) > 0:
+                resolved_status = "warning"
+            elif item.get("scope_without_tower_count", 0) > 0:
+                resolved_status = "scope_without_tower"
+            else:
+                resolved_status = "ok"
+            items.append(
+                {
+                    **item,
+                    "status": resolved_status,
+                    "source_watermark": source_watermark,
+                }
+            )
+        return {"line_sections": items, "count": len(items)}
+
+    def refresh_domain_year_progress(
+        self,
+        *,
+        project_code: str | None = None,
+        status: str | None = None,
+        limit: int = 1000,
+        offset: int = 0,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        query = {
+            "project_code": project_code or "",
+            "status": status or "",
+            "limit": limit,
+            "offset": offset,
+        }
+        filters_hash = _json_hash(query)
+        cache_key = f"domain:year_progress:{filters_hash}"
+        source_watermark = self._watermark_with_cache_fallback(
+            cache_key, "year_progress", "project_preconstruction"
+        )
+        return self._resolve_cached_or_refresh(
+            cache_key=cache_key,
+            cache_type="domain_year_progress",
+            source_watermark=source_watermark,
+            filters_hash=filters_hash,
+            force=force,
+            builder=lambda: self._build_domain_year_progress_view(
+                project_code=project_code,
+                status=status,
+                limit=limit,
+                offset=offset,
+                source_watermark=source_watermark,
+            ),
+        )
+
+    def _build_domain_year_progress_view(
+        self,
+        *,
+        project_code: str | None,
+        status: str | None,
+        limit: int,
+        offset: int,
+        source_watermark: str,
+    ) -> dict[str, Any]:
+        response = self.datahub.get_domain_year_progress(
+            project_code=project_code,
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+        items = [
+            {
+                "project_code": item.get("project_code"),
+                "project_name": item.get("project_name"),
+                "status": item.get("status"),
+                "progress_payload": item.get("raw"),
+                "source_watermark": source_watermark,
+            }
+            for item in response.get("items", [])
+        ]
+        return {"items": items, "count": len(items)}
+
     def refresh_scope(
         self, *, scope: str, date: str | None = None, force: bool = False
     ) -> dict[str, Any]:
@@ -299,6 +632,9 @@ class MonitorReadModelService:
                 "dates": self.refresh_dates_view(force=force),
                 "summary": self.refresh_daily_summary(date=date, force=force),
                 "projects": self.refresh_project_index(force=force),
+                "domain_projects": self.refresh_domain_projects(force=force),
+                "line_sections": self.refresh_domain_line_sections(force=force),
+                "year_progress": self.refresh_domain_year_progress(force=force),
             }
         if scope == "health":
             return {"health": self.refresh_health_snapshot(force=force)}
@@ -309,6 +645,27 @@ class MonitorReadModelService:
                 "dates": self.refresh_dates_view(force=force),
                 "summary": self.refresh_daily_summary(date=date, force=force),
             }
+        if scope == "domain":
+            return {
+                "domain_projects": self.refresh_domain_projects(force=force),
+                "line_sections": self.refresh_domain_line_sections(force=force),
+                "year_progress": self.refresh_domain_year_progress(force=force),
+            }
+        if scope == "domain_projects":
+            return {"domain_projects": self.refresh_domain_projects(force=force)}
+        if scope.startswith("domain_project:"):
+            project_code = scope.split(":", 1)[1]
+            return {
+                "domain_project": self.refresh_domain_project_detail(
+                    project_code=project_code,
+                    date=date,
+                    force=force,
+                )
+            }
+        if scope == "line_sections":
+            return {"line_sections": self.refresh_domain_line_sections(force=force)}
+        if scope == "year_progress":
+            return {"year_progress": self.refresh_domain_year_progress(force=force)}
         raise ValueError(f"unsupported refresh scope: {scope}")
 
     def cache_status(self) -> dict[str, Any]:

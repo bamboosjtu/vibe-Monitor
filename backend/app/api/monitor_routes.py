@@ -103,3 +103,97 @@ def get_projects(force: bool = Query(False)):
     except DataHubClientError as exc:
         raise HTTPException(status_code=502, detail=f"DataHub unavailable: {exc}") from exc
     return ApiResponse(data=data)
+
+
+@router.get("/domain/projects", response_model=ApiResponse)
+def get_domain_projects(
+    keyword: str | None = Query(None),
+    status: str | None = Query(None),
+    limit: int = Query(1000, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    force: bool = Query(False),
+):
+    service = _service()
+    try:
+        data = service.refresh_domain_projects(
+            keyword=keyword,
+            status=status,
+            limit=limit,
+            offset=offset,
+            force=force,
+        )
+    except DataHubClientError as exc:
+        raise HTTPException(status_code=502, detail=f"DataHub unavailable: {exc}") from exc
+    return ApiResponse(data=data)
+
+
+@router.get("/domain/projects/{project_code}", response_model=ApiResponse)
+def get_domain_project_detail(
+    project_code: str,
+    date: str | None = Query(None),
+    include_work_points: bool = Query(True),
+    include_towers: bool = Query(True),
+    include_stations: bool = Query(True),
+    include_line_sections: bool = Query(True),
+    force: bool = Query(False),
+):
+    service = _service()
+    try:
+        data = service.refresh_domain_project_detail(
+            project_code=project_code,
+            date=date,
+            include_work_points=include_work_points,
+            include_towers=include_towers,
+            include_stations=include_stations,
+            include_line_sections=include_line_sections,
+            force=force,
+        )
+    except DataHubClientError as exc:
+        raise HTTPException(status_code=502, detail=f"DataHub unavailable: {exc}") from exc
+    return ApiResponse(data=data)
+
+
+@router.get("/domain/line-sections", response_model=ApiResponse)
+def get_domain_line_sections(
+    project_code: str | None = Query(None),
+    single_project_code: str | None = Query(None),
+    bidding_section_code: str | None = Query(None),
+    limit: int = Query(1000, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    force: bool = Query(False),
+):
+    service = _service()
+    try:
+        data = service.refresh_domain_line_sections(
+            project_code=project_code,
+            single_project_code=single_project_code,
+            bidding_section_code=bidding_section_code,
+            limit=limit,
+            offset=offset,
+            force=force,
+        )
+    except DataHubClientError as exc:
+        raise HTTPException(status_code=502, detail=f"DataHub unavailable: {exc}") from exc
+    return ApiResponse(data=data)
+
+
+@router.get("/domain/year-progress", response_model=ApiResponse)
+def get_domain_year_progress(
+    project_code: str | None = Query(None),
+    status: str | None = Query(None),
+    limit: int = Query(1000, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    force: bool = Query(False),
+):
+    service = _service()
+    try:
+        data = service.refresh_domain_year_progress(
+            project_code=project_code,
+            status=status,
+            limit=limit,
+            offset=offset,
+            force=force,
+        )
+    except DataHubClientError as exc:
+        raise HTTPException(status_code=502, detail=f"DataHub unavailable: {exc}") from exc
+    return ApiResponse(data=data)

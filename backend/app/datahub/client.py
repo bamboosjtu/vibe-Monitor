@@ -45,3 +45,93 @@ class DataHubClient:
 
     def get_sandbox_summary(self, date: str | None = None) -> dict:
         return self._get_json("/api/v1/sandbox/map/summary", {"date": date})
+
+    def get_domain_projects(
+        self,
+        *,
+        keyword: str | None = None,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> dict:
+        return self._get_json(
+            "/api/v1/domain/projects",
+            {"keyword": keyword, "limit": limit, "offset": offset},
+        )
+
+    def get_domain_project(
+        self,
+        project_code: str,
+        *,
+        date: str | None = None,
+        include_work_points: bool = True,
+        include_towers: bool = True,
+        include_stations: bool = True,
+        include_line_sections: bool = True,
+        limit: int = 10000,
+    ) -> dict:
+        return self._get_json(
+            f"/api/v1/domain/projects/{parse.quote(project_code)}",
+            {
+                "date": date,
+                "include_work_points": str(include_work_points).lower(),
+                "include_towers": str(include_towers).lower(),
+                "include_stations": str(include_stations).lower(),
+                "include_line_sections": str(include_line_sections).lower(),
+                "limit": limit,
+            },
+        )
+
+    def get_domain_line_sections(
+        self,
+        *,
+        project_code: str | None = None,
+        single_project_code: str | None = None,
+        bidding_section_code: str | None = None,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> dict:
+        return self._get_json(
+            "/api/v1/domain/line-sections",
+            {
+                "project_code": project_code,
+                "single_project_code": single_project_code,
+                "bidding_section_code": bidding_section_code,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+
+    def get_domain_year_progress(
+        self,
+        *,
+        project_code: str | None = None,
+        status: str | None = None,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> dict:
+        return self._get_json(
+            "/api/v1/domain/year-progress",
+            {
+                "project_code": project_code,
+                "status": status,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+
+    def get_domain_project_view(
+        self,
+        project_code: str,
+        *,
+        date: str | None = None,
+        include_work_points: bool = True,
+        limit: int = 10000,
+    ) -> dict:
+        return self._get_json(
+            f"/api/v1/domain/project-view/{parse.quote(project_code)}",
+            {
+                "date": date,
+                "include_work_points": str(include_work_points).lower(),
+                "limit": limit,
+            },
+        )
