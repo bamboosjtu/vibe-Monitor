@@ -154,32 +154,98 @@ def _mock_datahub_payload(path: str) -> dict:
                 }
             ]
         }
-    if path == "/api/v1/domain/project-view/PRJ-001":
+    if path == "/api/v1/domain/projects/PRJ-001":
         return {
             "project": {
                 "entity_key": "dcp:project:PRJ-001",
                 "attributes": {"project_code": "PRJ-001", "project_name": "示例工程"},
             },
-            "hierarchy": {
-                "single_projects": [
-                    {
-                        "entity_key": "dcp:single_project:S01",
-                        "attributes": {"single_project_code": "S01"},
-                    }
-                ],
-                "bidding_sections": [
-                    {
-                        "entity_key": "dcp:bidding_section:B01",
-                        "attributes": {"bidding_section_code": "B01"},
-                    }
-                ],
-                "relationships": [],
-            },
-            "towers": [{"id": "dcp:tower:S01:B01:G1"}],
-            "stations": [{"id": "dcp:station:S01"}],
-            "line_sections": [{"entity_key": "dcp:line_section:LS-001"}],
-            "work_points": [{"id": "dcp:work_point:2026-05-08:meeting-001"}],
-            "project_progress": [{"entity_key": "dcp:project_progress:PROG-001"}],
+            "single_projects": [
+                {
+                    "entity_key": "dcp:single_project:S01",
+                    "attributes": {"single_project_code": "S01", "single_project_name": "单项一"},
+                }
+            ],
+            "bidding_sections": [
+                {
+                    "entity_key": "dcp:bidding_section:B01",
+                    "attributes": {"bidding_section_code": "B01", "bidding_section_name": "标段一"},
+                }
+            ],
+            "relationships": [
+                {
+                    "relationship_type": "HAS_SINGLE_PROJECT",
+                    "from_entity_key": "dcp:project:PRJ-001",
+                    "to_entity_key": "dcp:single_project:S01",
+                    "attributes": {},
+                },
+                {
+                    "relationship_type": "HAS_BIDDING_SECTION",
+                    "from_entity_key": "dcp:single_project:S01",
+                    "to_entity_key": "dcp:bidding_section:B01",
+                    "attributes": {},
+                },
+            ],
+            "towers": [
+                {
+                    "entity_key": "dcp:tower:S01:B01:G1",
+                    "attributes": {
+                        "project_code": "PRJ-001",
+                        "single_project_code": "S01",
+                        "bidding_section_code": "B01",
+                        "tower_no": "G1",
+                        "longitude": 112.9,
+                        "latitude": 28.2,
+                    },
+                }
+            ],
+            "stations": [
+                {
+                    "entity_key": "dcp:station:S01",
+                    "attributes": {
+                        "project_code": "PRJ-001",
+                        "single_project_code": "S01",
+                        "longitude": 112.8,
+                        "latitude": 28.1,
+                    },
+                }
+            ],
+            "line_sections": [
+                {
+                    "entity_key": "dcp:line_section:LS-001",
+                    "attributes": {
+                        "line_section_id": "LS-001",
+                        "line_section_name": "一区段",
+                        "project_code": "PRJ-001",
+                        "single_project_code": "S01",
+                        "bidding_section_code": "B01",
+                    },
+                }
+            ],
+            "work_points": [
+                {
+                    "entity_key": "dcp:work_point:2026-05-08:meeting-001",
+                    "entity_date": "2026-05-08",
+                    "attributes": {
+                        "project_name": "示例工程",
+                        "project_code": "PRJ-001",
+                        "longitude": 112.7,
+                        "latitude": 28.0,
+                        "person_count": 10,
+                        "risk_level": "2",
+                        "work_status": "working",
+                        "voltage_level": "500kV",
+                        "city": "长沙",
+                        "work_date": "2026-05-08",
+                    },
+                }
+            ],
+            "project_progress": [
+                {
+                    "entity_key": "dcp:project_progress:PROG-001",
+                    "attributes": {"status": "在建"},
+                }
+            ],
             "summary": {
                 "single_project_count": 1,
                 "bidding_section_count": 1,
@@ -189,6 +255,31 @@ def _mock_datahub_payload(path: str) -> dict:
                 "work_point_count": 1,
                 "project_progress_count": 1,
             },
+        }
+    if path == "/api/v1/domain/relationships":
+        return {
+            "items": [
+                {
+                    "relationship_type": "HAS_TOWER_SEQUENCE",
+                    "from_entity_key": "dcp:line_section:LS-001",
+                    "to_entity_key": "dcp:tower:S01:B01:G1",
+                    "attributes": {
+                        "sequence_index": 0,
+                        "tower_no": "G1",
+                        "node_kind": "physical_tower",
+                    },
+                },
+                {
+                    "relationship_type": "HAS_TOWER_SEQUENCE",
+                    "from_entity_key": "dcp:line_section:LS-001",
+                    "to_entity_key": "dcp:tower:S01:B01:REF-001",
+                    "attributes": {
+                        "sequence_index": 1,
+                        "tower_no": "韶鹤Ⅰ线#001",
+                        "node_kind": "reference_node",
+                    },
+                },
+            ]
         }
     raise AssertionError(f"unexpected path: {path}")
 
@@ -292,15 +383,27 @@ def test_domain_read_model_service_builds_project_and_section_views(
 
     projects = service.refresh_domain_projects(force=True)
     detail = service.refresh_domain_project_detail(project_code="PRJ-001", force=True)
+    project_map = service.refresh_domain_project_map_view(project_code="PRJ-001", force=True)
     line_sections = service.refresh_domain_line_sections(force=True)
+    line_section_detail = service.refresh_domain_line_section_detail(
+        line_section_key="dcp:line_section:LS-001",
+        force=True,
+    )
     year_progress = service.refresh_domain_year_progress(force=True)
+    project_status = service.refresh_project_status(force=True)
 
     assert projects["projects"][0]["project_code"] == "PRJ-001"
     assert projects["projects"][0]["status"] == "在建"
     assert detail["project"]["attributes"]["project_code"] == "PRJ-001"
     assert detail["counts"]["tower_count"] == 1
-    assert line_sections["line_sections"][0]["status"] == "ok"
+    assert detail["latest_work_date"] == "2026-05-08"
+    assert detail["progress_summary"]["statuses"] == ["在建"]
+    assert project_map["work_points"][0]["project_code"] == "PRJ-001"
+    assert line_sections["line_sections"][0]["status"] == "reference"
+    assert line_section_detail["matched_towers"][0]["entity_key"] == "dcp:tower:S01:B01:G1"
+    assert line_section_detail["reference_nodes"][0]["tower_no"] == "韶鹤Ⅰ线#001"
     assert year_progress["items"][0]["status"] == "在建"
+    assert project_status["items"][0]["progress_summary"]["statuses"] == ["在建"]
 
 
 def test_refresh_domain_projects_does_not_fail_when_year_progress_fails(
@@ -354,15 +457,21 @@ def test_monitor_backend_domain_api_endpoints(monkeypatch, tmp_path: Path) -> No
     with TestClient(main_module.app) as client:
         projects = client.get("/api/domain/projects")
         detail = client.get("/api/domain/projects/PRJ-001")
+        project_map = client.get("/api/domain/projects/PRJ-001/map")
         line_sections = client.get("/api/domain/line-sections")
+        line_section_detail = client.get("/api/domain/line-sections/dcp:line_section:LS-001")
         year_progress = client.get("/api/domain/year-progress")
+        project_status = client.get("/api/domain/project-status")
         refresh = client.post("/api/cache/refresh", json={"scope": "domain", "force": True})
 
     assert projects.status_code == 200
     assert projects.json()["data"]["projects"][0]["project_code"] == "PRJ-001"
     assert detail.json()["data"]["counts"]["tower_count"] == 1
+    assert project_map.json()["data"]["latest_work_date"] == "2026-05-08"
     assert line_sections.json()["data"]["line_sections"][0]["line_section_key"] == "dcp:line_section:LS-001"
+    assert line_section_detail.json()["data"]["reference_nodes"][0]["tower_no"] == "韶鹤Ⅰ线#001"
     assert year_progress.json()["data"]["items"][0]["project_code"] == "PRJ-001"
+    assert project_status.json()["data"]["items"][0]["project_code"] == "PRJ-001"
     assert refresh.status_code == 200
 
 

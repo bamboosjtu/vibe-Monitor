@@ -20,6 +20,17 @@ def _utcnow_iso() -> str:
     return datetime.utcnow().isoformat()
 
 
+def _safe_attributes(entity: Any) -> dict[str, Any]:
+    if isinstance(entity, dict):
+        value = entity.get("attributes")
+        return value if isinstance(value, dict) else {}
+    return {}
+
+
+def _project_status_label(status: Any) -> str:
+    return str(status) if status not in (None, "") else "unknown"
+
+
 class MonitorReadModelService:
     def __init__(
         self,
@@ -456,10 +467,13 @@ class MonitorReadModelService:
         include_line_sections: bool,
         source_watermark: str,
     ) -> dict[str, Any]:
-        view = self.datahub.get_domain_project_view(
+        view = self.datahub.get_domain_project(
             project_code,
             date=date,
             include_work_points=include_work_points,
+            include_towers=include_towers,
+            include_stations=include_stations,
+            include_line_sections=include_line_sections,
             limit=10000,
         )
         line_sections_index = self.datahub.get_domain_line_sections(
@@ -482,16 +496,54 @@ class MonitorReadModelService:
                 warnings.append(f"line_section scope has no tower entities: {key}")
             line_sections.append(merged)
 
+        work_points = []
+        latest_work_date = None
+        for item in view.get("work_points", []):
+            attributes = _safe_attributes(item)
+            work_date = attributes.get("work_date") or item.get("entity_date")
+            if work_date not in (None, ""):
+                latest_work_date = max(
+                    latest_work_date or str(work_date),
+                    str(work_date),
+                )
+            work_points.append(
+                {
+                    "id": item.get("entity_key"),
+                    "project_name": attributes.get("project_name"),
+                    "project_code": attributes.get("project_code"),
+                    "longitude": attributes.get("longitude"),
+                    "latitude": attributes.get("latitude"),
+                    "person_count": attributes.get("person_count"),
+                    "risk_level": attributes.get("risk_level"),
+                    "work_status": attributes.get("work_status"),
+                    "voltage_level": attributes.get("voltage_level"),
+                    "city": attributes.get("city"),
+                    "work_date": work_date,
+                }
+            )
+
+        progress_statuses = sorted(
+            {
+                _project_status_label(_safe_attributes(item).get("status"))
+                for item in view.get("project_progress", [])
+            }
+        )
+
         return {
             "project": view.get("project"),
-            "single_projects": view.get("hierarchy", {}).get("single_projects", []),
-            "bidding_sections": view.get("hierarchy", {}).get("bidding_sections", []),
+            "single_projects": view.get("single_projects", []),
+            "bidding_sections": view.get("bidding_sections", []),
             "towers": view.get("towers", []) if include_towers else [],
             "stations": view.get("stations", []) if include_stations else [],
             "line_sections": line_sections if include_line_sections else [],
-            "work_points": view.get("work_points", []) if include_work_points else [],
+            "work_points": work_points if include_work_points else [],
             "project_progress": view.get("project_progress", []),
             "counts": view.get("summary", {}),
+            "latest_work_date": latest_work_date,
+            "progress_summary": {
+                "count": len(view.get("project_progress", [])),
+                "statuses": progress_statuses,
+            },
             "warnings": sorted(set(warnings)),
             "source_watermark": source_watermark,
         }
@@ -556,7 +608,9 @@ class MonitorReadModelService:
             if item.get("missing_physical_count", 0) > 0:
                 resolved_status = "warning"
             elif item.get("scope_without_tower_count", 0) > 0:
-                resolved_status = "scope_without_tower"
+                resolved_status = "warning"
+            elif item.get("reference_node_count", 0) > 0:
+                resolved_status = "reference"
             else:
                 resolved_status = "ok"
             items.append(
@@ -629,6 +683,171 @@ class MonitorReadModelService:
             for item in response.get("items", [])
         ]
         return {"items": items, "count": len(items)}
+
+    def refresh_domain_project_map_view(
+        self,
+        *,
+        project_code: str,
+        date: str | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        detail = self.refresh_domain_project_detail(
+            project_code=project_code,
+            date=date,
+            include_work_points=True,
+            include_towers=True,
+            include_stations=True,
+            include_line_sections=True,
+            force=force,
+        )
+        return {
+            "project": detail.get("project"),
+            "towers": detail.get("towers", []),
+            "stations": detail.get("stations", []),
+            "work_points": detail.get("work_points", []),
+            "line_sections": detail.get("line_sections", []),
+            "counts": detail.get("counts", {}),
+            "warnings": detail.get("warnings", []),
+            "latest_work_date": detail.get("latest_work_date"),
+            "progress_summary": detail.get("progress_summary", {}),
+            "source_watermark": detail.get("source_watermark"),
+        }
+
+    def refresh_domain_line_section_detail(
+        self,
+        *,
+        line_section_key: str,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        cache_key = f"domain:line_section_detail:{line_section_key}"
+        source_watermark = self._watermark_with_cache_fallback(
+            cache_key, "line_section", "tower", "project_preconstruction"
+        )
+        return self._resolve_cached_or_refresh(
+            cache_key=cache_key,
+            cache_type="domain_line_section_detail",
+            source_watermark=source_watermark,
+            force=force,
+            builder=lambda: self._build_domain_line_section_detail_view(
+                line_section_key=line_section_key,
+                source_watermark=source_watermark,
+            ),
+        )
+
+    def _build_domain_line_section_detail_view(
+        self,
+        *,
+        line_section_key: str,
+        source_watermark: str,
+    ) -> dict[str, Any]:
+        line_sections = self.refresh_domain_line_sections(force=False, limit=5000)
+        line_section_item = next(
+            (
+                item
+                for item in line_sections.get("line_sections", [])
+                if item.get("line_section_key") == line_section_key
+            ),
+            None,
+        )
+        if line_section_item is None:
+            raise DataHubClientError(f"line section not found: {line_section_key}")
+
+        project_code = line_section_item.get("project_code")
+        if not project_code:
+            raise DataHubClientError(
+                f"line section missing project_code: {line_section_key}"
+            )
+        project_view = self.datahub.get_domain_project(
+            str(project_code),
+            include_work_points=False,
+            include_towers=True,
+            include_stations=False,
+            include_line_sections=True,
+            limit=10000,
+        )
+        line_section = next(
+            (
+                item
+                for item in project_view.get("line_sections", [])
+                if item.get("entity_key") == line_section_key
+            ),
+            None,
+        )
+        tower_lookup = {
+            item.get("entity_key"): item
+            for item in project_view.get("towers", [])
+            if item.get("entity_key")
+        }
+        relationship_response = self.datahub.get_domain_relationships(
+            relationship_type="HAS_TOWER_SEQUENCE",
+            from_entity_type="line_section",
+            from_entity_key=line_section_key,
+            limit=10000,
+            offset=0,
+        )
+        relationships = list(relationship_response.get("items", []))
+        relationships.sort(
+            key=lambda item: (item.get("attributes", {}) or {}).get("sequence_index", 0)
+        )
+
+        tower_sequence = []
+        matched_towers = []
+        reference_nodes = []
+        missing_nodes = []
+        scope_without_tower = []
+        warnings: list[str] = []
+        for relationship in relationships:
+            attributes = relationship.get("attributes") or {}
+            tower_no = attributes.get("tower_no")
+            node_kind = attributes.get("node_kind")
+            sequence_item = {
+                "tower_key": relationship.get("to_entity_key"),
+                "tower_no": tower_no,
+                "sequence_index": attributes.get("sequence_index"),
+                "node_kind": node_kind,
+                "matched": relationship.get("to_entity_key") in tower_lookup,
+            }
+            tower_sequence.append(sequence_item)
+            if relationship.get("to_entity_key") in tower_lookup:
+                matched_towers.append(tower_lookup[relationship.get("to_entity_key")])
+            elif node_kind == "reference_node":
+                reference_nodes.append(sequence_item)
+            elif line_section_item.get("scope_without_tower_count", 0) > 0:
+                scope_without_tower.append(sequence_item)
+            else:
+                missing_nodes.append(sequence_item)
+
+        if missing_nodes:
+            warnings.append("部分物理塔序列节点缺少 tower 实体")
+        if scope_without_tower:
+            warnings.append("部分区段作用域没有 tower 实体")
+
+        return {
+            "line_section": line_section or line_section_item,
+            "tower_sequence": tower_sequence,
+            "matched_towers": matched_towers,
+            "reference_nodes": reference_nodes,
+            "missing_nodes": missing_nodes,
+            "scope_without_tower": scope_without_tower,
+            "warnings": warnings,
+            "source_watermark": source_watermark,
+        }
+
+    def refresh_project_status(self, *, force: bool = False) -> dict[str, Any]:
+        projects = self.refresh_domain_projects(force=force, limit=1000, offset=0)
+        return {
+            "items": [
+                {
+                    "project_code": item.get("project_code"),
+                    "project_name": item.get("project_name"),
+                    "status": item.get("status"),
+                    "progress_summary": item.get("progress_summary"),
+                    "source_watermark": item.get("source_watermark"),
+                }
+                for item in projects.get("projects", [])
+            ],
+            "count": len(projects.get("projects", [])),
+        }
 
     def refresh_scope(
         self,
@@ -726,6 +945,25 @@ class MonitorReadModelService:
             return {
                 "year_progress": self.refresh_domain_year_progress(
                     force=force, limit=limit or 1000
+                )
+            }
+        if scope == "project_status":
+            return {"project_status": self.refresh_project_status(force=force)}
+        if scope.startswith("domain_project_map:"):
+            project_code = scope.split(":", 1)[1]
+            return {
+                "domain_project_map": self.refresh_domain_project_map_view(
+                    project_code=project_code,
+                    date=date,
+                    force=force,
+                )
+            }
+        if scope.startswith("domain_line_section:"):
+            line_section_key = scope.split(":", 1)[1]
+            return {
+                "domain_line_section": self.refresh_domain_line_section_detail(
+                    line_section_key=line_section_key,
+                    force=force,
                 )
             }
         raise ValueError(f"unsupported refresh scope: {scope}")

@@ -159,6 +159,24 @@ def get_domain_project_detail(
     return ApiResponse(data=data)
 
 
+@router.get("/domain/projects/{project_code}/map", response_model=ApiResponse)
+def get_domain_project_map_view(
+    project_code: str,
+    date: str | None = Query(None),
+    force: bool = Query(False),
+):
+    service = _service()
+    try:
+        data = service.refresh_domain_project_map_view(
+            project_code=project_code,
+            date=date,
+            force=force,
+        )
+    except DataHubClientError as exc:
+        raise HTTPException(status_code=502, detail=f"DataHub unavailable: {exc}") from exc
+    return ApiResponse(data=data)
+
+
 @router.get("/domain/line-sections", response_model=ApiResponse)
 def get_domain_line_sections(
     project_code: str | None = Query(None),
@@ -183,6 +201,22 @@ def get_domain_line_sections(
     return ApiResponse(data=data)
 
 
+@router.get("/domain/line-sections/{line_section_key}", response_model=ApiResponse)
+def get_domain_line_section_detail(
+    line_section_key: str,
+    force: bool = Query(False),
+):
+    service = _service()
+    try:
+        data = service.refresh_domain_line_section_detail(
+            line_section_key=line_section_key,
+            force=force,
+        )
+    except DataHubClientError as exc:
+        raise HTTPException(status_code=502, detail=f"DataHub unavailable: {exc}") from exc
+    return ApiResponse(data=data)
+
+
 @router.get("/domain/year-progress", response_model=ApiResponse)
 def get_domain_year_progress(
     project_code: str | None = Query(None),
@@ -200,6 +234,16 @@ def get_domain_year_progress(
             offset=offset,
             force=force,
         )
+    except DataHubClientError as exc:
+        raise HTTPException(status_code=502, detail=f"DataHub unavailable: {exc}") from exc
+    return ApiResponse(data=data)
+
+
+@router.get("/domain/project-status", response_model=ApiResponse)
+def get_domain_project_status(force: bool = Query(False)):
+    service = _service()
+    try:
+        data = service.refresh_project_status(force=force)
     except DataHubClientError as exc:
         raise HTTPException(status_code=502, detail=f"DataHub unavailable: {exc}") from exc
     return ApiResponse(data=data)

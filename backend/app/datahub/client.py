@@ -135,3 +135,29 @@ class DataHubClient:
                 "limit": limit,
             },
         )
+
+    def get_domain_relationships(
+        self,
+        *,
+        relationship_type: str | None = None,
+        from_entity_type: str | None = None,
+        from_entity_key: str | None = None,
+        to_entity_type: str | None = None,
+        to_entity_key: str | None = None,
+        dataset_key: str | None = None,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> dict:
+        return self._get_json(
+            "/api/v1/domain/relationships",
+            {
+                "relationship_type": relationship_type,
+                "from_entity_type": from_entity_type,
+                "from_entity_key": from_entity_key,
+                "to_entity_type": to_entity_type,
+                "to_entity_key": to_entity_key,
+                "dataset_key": dataset_key,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
