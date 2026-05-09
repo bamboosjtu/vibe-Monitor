@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     MONITOR_BACKEND_HOST: str = "127.0.0.1"
     MONITOR_BACKEND_PORT: int = 8001
     DATAHUB_BASE_URL: str = "http://127.0.0.1:8000"
-    DATAHUB_TIMEOUT_SECONDS: int = 10
+    DATAHUB_TIMEOUT_SECONDS: int = 30
     MONITOR_CACHE_TTL_SECONDS: int = 300
+    DOMAIN_PROGRESS_MERGE_LIMIT: int = 200
     
     # CORS 配置
     CORS_ORIGINS: List[str] = [

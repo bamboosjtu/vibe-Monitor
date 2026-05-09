@@ -344,9 +344,17 @@ class MonitorReadModelService:
             limit=limit,
             offset=offset,
         )
-        progress = self.datahub.get_domain_year_progress(limit=5000, offset=0)
+        progress_items: list[dict[str, Any]] = []
+        try:
+            progress = self.datahub.get_domain_year_progress(
+                limit=min(settings.DOMAIN_PROGRESS_MERGE_LIMIT, max(limit, 1)),
+                offset=0,
+            )
+            progress_items = list(progress.get("items", []))
+        except DataHubClientError:
+            progress_items = []
         progress_by_project: dict[str, list[dict[str, Any]]] = {}
-        for item in progress.get("items", []):
+        for item in progress_items:
             code = item.get("project_code")
             if code:
                 progress_by_project.setdefault(str(code), []).append(item)
@@ -623,7 +631,12 @@ class MonitorReadModelService:
         return {"items": items, "count": len(items)}
 
     def refresh_scope(
-        self, *, scope: str, date: str | None = None, force: bool = False
+        self,
+        *,
+        scope: str,
+        date: str | None = None,
+        force: bool = False,
+        limit: int | None = None,
     ) -> dict[str, Any]:
         if scope == "all":
             return {
@@ -632,9 +645,15 @@ class MonitorReadModelService:
                 "dates": self.refresh_dates_view(force=force),
                 "summary": self.refresh_daily_summary(date=date, force=force),
                 "projects": self.refresh_project_index(force=force),
-                "domain_projects": self.refresh_domain_projects(force=force),
-                "line_sections": self.refresh_domain_line_sections(force=force),
-                "year_progress": self.refresh_domain_year_progress(force=force),
+                "domain_projects": self.refresh_domain_projects(
+                    force=force, limit=limit or 1000
+                ),
+                "line_sections": self.refresh_domain_line_sections(
+                    force=force, limit=limit or 1000
+                ),
+                "year_progress": self.refresh_domain_year_progress(
+                    force=force, limit=limit or 1000
+                ),
             }
         if scope == "health":
             return {"health": self.refresh_health_snapshot(force=force)}
@@ -646,13 +665,48 @@ class MonitorReadModelService:
                 "summary": self.refresh_daily_summary(date=date, force=force),
             }
         if scope == "domain":
-            return {
-                "domain_projects": self.refresh_domain_projects(force=force),
-                "line_sections": self.refresh_domain_line_sections(force=force),
-                "year_progress": self.refresh_domain_year_progress(force=force),
+            result: dict[str, Any] = {
+                "partial_success": False,
+                "errors": [],
             }
+            for key, fn in (
+                (
+                    "domain_projects",
+                    lambda: self.refresh_domain_projects(
+                        force=force, limit=limit or 1000
+                    ),
+                ),
+                (
+                    "line_sections",
+                    lambda: self.refresh_domain_line_sections(
+                        force=force, limit=limit or 1000
+                    ),
+                ),
+                (
+                    "year_progress",
+                    lambda: self.refresh_domain_year_progress(
+                        force=force, limit=limit or 1000
+                    ),
+                ),
+            ):
+                try:
+                    result[key] = fn()
+                except DataHubClientError as exc:
+                    result["errors"].append({"scope": key, "error": str(exc)})
+            result["partial_success"] = bool(result["errors"])
+            if (
+                "domain_projects" not in result
+                and "line_sections" not in result
+                and "year_progress" not in result
+            ):
+                raise DataHubClientError("all domain refresh operations failed")
+            return result
         if scope == "domain_projects":
-            return {"domain_projects": self.refresh_domain_projects(force=force)}
+            return {
+                "domain_projects": self.refresh_domain_projects(
+                    force=force, limit=limit or 1000
+                )
+            }
         if scope.startswith("domain_project:"):
             project_code = scope.split(":", 1)[1]
             return {
@@ -663,9 +717,17 @@ class MonitorReadModelService:
                 )
             }
         if scope == "line_sections":
-            return {"line_sections": self.refresh_domain_line_sections(force=force)}
+            return {
+                "line_sections": self.refresh_domain_line_sections(
+                    force=force, limit=limit or 1000
+                )
+            }
         if scope == "year_progress":
-            return {"year_progress": self.refresh_domain_year_progress(force=force)}
+            return {
+                "year_progress": self.refresh_domain_year_progress(
+                    force=force, limit=limit or 1000
+                )
+            }
         raise ValueError(f"unsupported refresh scope: {scope}")
 
     def cache_status(self) -> dict[str, Any]:

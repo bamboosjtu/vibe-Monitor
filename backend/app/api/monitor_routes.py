@@ -15,6 +15,7 @@ class CacheRefreshRequest(BaseModel):
     scope: str = "all"
     date: str | None = None
     force: bool = False
+    limit: int | None = None
 
 
 def _service() -> MonitorReadModelService:
@@ -31,7 +32,12 @@ def get_cache_status():
 def refresh_cache(request: CacheRefreshRequest):
     service = _service()
     try:
-        data = service.refresh_scope(scope=request.scope, date=request.date, force=request.force)
+        data = service.refresh_scope(
+            scope=request.scope,
+            date=request.date,
+            force=request.force,
+            limit=request.limit,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except DataHubClientError as exc:

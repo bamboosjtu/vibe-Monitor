@@ -9,7 +9,7 @@ class DataHubClientError(RuntimeError):
 
 
 class DataHubClient:
-    def __init__(self, *, base_url: str, timeout_seconds: int = 10):
+    def __init__(self, *, base_url: str, timeout_seconds: int = 30):
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
 

@@ -303,6 +303,27 @@ def test_domain_read_model_service_builds_project_and_section_views(
     assert year_progress["items"][0]["status"] == "在建"
 
 
+def test_refresh_domain_projects_does_not_fail_when_year_progress_fails(
+    monkeypatch, tmp_path: Path
+) -> None:
+    def _mock(path: str) -> dict:
+        if path == "/api/v1/domain/year-progress":
+            raise DataHubClientError("slow or unavailable")
+        return _mock_datahub_payload(path)
+
+    monkeypatch.setattr(DataHubClient, "_get_json", lambda self, path, query=None: _mock(path))
+    service = MonitorReadModelService(
+        store=MonitorCacheStore(tmp_path / "monitor_cache.db"),
+        datahub=DataHubClient(base_url="http://127.0.0.1:8000"),
+        ttl_seconds=300,
+    )
+
+    projects = service.refresh_domain_projects(force=True)
+
+    assert projects["projects"][0]["project_code"] == "PRJ-001"
+    assert projects["projects"][0]["status"] is None
+
+
 def test_domain_read_model_service_uses_stale_cache_when_domain_datahub_unavailable(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -343,6 +364,42 @@ def test_monitor_backend_domain_api_endpoints(monkeypatch, tmp_path: Path) -> No
     assert line_sections.json()["data"]["line_sections"][0]["line_section_key"] == "dcp:line_section:LS-001"
     assert year_progress.json()["data"]["items"][0]["project_code"] == "PRJ-001"
     assert refresh.status_code == 200
+
+
+def test_monitor_backend_domain_refresh_scope_supports_partial_success(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(main_module, "init_db", lambda: None)
+    monkeypatch.setattr(settings, "MONITOR_CACHE_DB", str(tmp_path / "monitor_cache.db"))
+
+    def _mock(path: str) -> dict:
+        if path == "/api/v1/domain/year-progress":
+            raise DataHubClientError("year progress timeout")
+        return _mock_datahub_payload(path)
+
+    monkeypatch.setattr(DataHubClient, "_get_json", lambda self, path, query=None: _mock(path))
+
+    with TestClient(main_module.app) as client:
+        refresh = client.post(
+            "/api/cache/refresh",
+            json={"scope": "domain", "force": True, "limit": 200},
+        )
+
+    assert refresh.status_code == 200
+    data = refresh.json()["data"]
+    assert data["partial_success"] is True
+    assert data["domain_projects"]["projects"][0]["project_code"] == "PRJ-001"
+    assert data["line_sections"]["line_sections"][0]["line_section_key"] == "dcp:line_section:LS-001"
+    assert data["errors"]
+
+
+def test_monitor_backend_uses_extended_datahub_timeout_by_default(tmp_path: Path) -> None:
+    service = MonitorReadModelService(
+        store=MonitorCacheStore(tmp_path / "monitor_cache.db")
+    )
+
+    assert service.datahub.timeout_seconds == settings.DATAHUB_TIMEOUT_SECONDS
+    assert service.datahub.timeout_seconds == 30
 
 
 def test_api_response_timestamp_uses_default_factory() -> None:
