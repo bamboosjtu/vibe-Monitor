@@ -245,36 +245,44 @@ describe('App Store', () => {
     it('should load dates and latest work points from DataHub', async () => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith('/api/v1/sandbox/dates')) {
+        if (url.endsWith('/api/map/dates')) {
           return new Response(JSON.stringify({
-            dates: ['2026-05-03', '2026-05-04'],
-            latest_date: '2026-05-04',
-            count: 2,
+            code: 0,
+            message: 'success',
+            data: {
+              dates: ['2026-05-03', '2026-05-04'],
+              latest_date: '2026-05-04',
+              count: 2,
+            },
           }));
         }
-        if (url.endsWith('/api/v1/sandbox/map/summary?date=2026-05-04')) {
+        if (url.endsWith('/api/map/summary?date=2026-05-04')) {
           return new Response(JSON.stringify({
-            meta: {
-              date: '2026-05-04',
-              limit: 10000,
-              work_points_count: 1,
-              truncated: false,
-            },
-            work_points: [
-              {
-                id: 'dcp:work_point:2026-05-04:meeting-001',
-                project_name: '湖南作业点',
-                longitude: 112.93,
-                latitude: 28.22,
-                person_count: 12,
-                risk_level: '2',
-                work_status: 'working',
-                voltage_level: '500kV',
-                city: '长沙',
-                work_date: '2026-05-04',
-                raw: { should_not_leak: true },
+            code: 0,
+            message: 'success',
+            data: {
+              meta: {
+                date: '2026-05-04',
+                limit: 10000,
+                work_points_count: 1,
+                truncated: false,
               },
-            ],
+              work_points: [
+                {
+                  id: 'dcp:work_point:2026-05-04:meeting-001',
+                  project_name: '湖南作业点',
+                  longitude: 112.93,
+                  latitude: 28.22,
+                  person_count: 12,
+                  risk_level: '2',
+                  work_status: 'working',
+                  voltage_level: '500kV',
+                  city: '长沙',
+                  work_date: '2026-05-04',
+                  raw: { should_not_leak: true },
+                },
+              ],
+            },
           }));
         }
         throw new Error(`unexpected url: ${url}`);
@@ -297,28 +305,32 @@ describe('App Store', () => {
     it('should reload work points for selected DataHub date', async () => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith('/api/v1/sandbox/map/summary?date=2026-05-03')) {
+        if (url.endsWith('/api/map/summary?date=2026-05-03')) {
           return new Response(JSON.stringify({
-            meta: {
-              date: '2026-05-03',
-              limit: 10000,
-              work_points_count: 1,
-              truncated: false,
-            },
-            work_points: [
-              {
-                id: 'dcp:work_point:2026-05-03:meeting-002',
-                project_name: '三号作业点',
-                longitude: 112.91,
-                latitude: 28.21,
-                person_count: 8,
-                risk_level: '3',
-                work_status: 'paused',
-                voltage_level: '220kV',
-                city: '株洲',
-                work_date: '2026-05-03',
+            code: 0,
+            message: 'success',
+            data: {
+              meta: {
+                date: '2026-05-03',
+                limit: 10000,
+                work_points_count: 1,
+                truncated: false,
               },
-            ],
+              work_points: [
+                {
+                  id: 'dcp:work_point:2026-05-03:meeting-002',
+                  project_name: '三号作业点',
+                  longitude: 112.91,
+                  latitude: 28.21,
+                  person_count: 8,
+                  risk_level: '3',
+                  work_status: 'paused',
+                  voltage_level: '220kV',
+                  city: '株洲',
+                  work_date: '2026-05-03',
+                },
+              ],
+            },
           }));
         }
         throw new Error(`unexpected url: ${url}`);
@@ -635,30 +647,34 @@ describe('App Store', () => {
     it('selectedProjectCode should persist after switching date', async () => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith('/api/v1/sandbox/map/summary?date=2026-05-03')) {
+        if (url.endsWith('/api/map/summary?date=2026-05-03')) {
           return new Response(
             JSON.stringify({
-              meta: {
-                date: '2026-05-03',
-                limit: 10000,
-                work_points_count: 1,
-                truncated: false,
-              },
-              work_points: [
-                {
-                  id: 'dcp:work_point:2026-05-03:meeting-010',
-                  project_name: '示例工程',
-                  project_code: 'PRJ-001',
-                  longitude: 112.91,
-                  latitude: 28.21,
-                  person_count: 8,
-                  risk_level: '3',
-                  work_status: 'paused',
-                  voltage_level: '220kV',
-                  city: '株洲',
-                  work_date: '2026-05-03',
+              code: 0,
+              message: 'success',
+              data: {
+                meta: {
+                  date: '2026-05-03',
+                  limit: 10000,
+                  work_points_count: 1,
+                  truncated: false,
                 },
-              ],
+                work_points: [
+                  {
+                    id: 'dcp:work_point:2026-05-03:meeting-010',
+                    project_name: '示例工程',
+                    project_code: 'PRJ-001',
+                    longitude: 112.91,
+                    latitude: 28.21,
+                    person_count: 8,
+                    risk_level: '3',
+                    work_status: 'paused',
+                    voltage_level: '220kV',
+                    city: '株洲',
+                    work_date: '2026-05-03',
+                  },
+                ],
+              },
             }),
           );
         }

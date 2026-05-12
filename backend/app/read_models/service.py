@@ -27,6 +27,12 @@ def _safe_attributes(entity: Any) -> dict[str, Any]:
     return {}
 
 
+def _entity_key(entity: Any) -> str | None:
+    if isinstance(entity, dict):
+        return entity.get("entity_key") or entity.get("id")
+    return None
+
+
 def _project_status_label(status: Any) -> str:
     return str(status) if status not in (None, "") else "unknown"
 
@@ -171,12 +177,94 @@ class MonitorReadModelService:
         )
 
     def _build_map_skeleton_view(self) -> dict[str, Any]:
-        skeleton = self.datahub.get_sandbox_skeleton()
+        projects = self.datahub.get_domain_projects(limit=1000, offset=0)
+        line_sections_index = self.datahub.get_domain_line_sections(limit=5000, offset=0)
+        line_section_stats = {
+            item.get("line_section_key"): item
+            for item in line_sections_index.get("items", [])
+            if item.get("line_section_key")
+        }
+        lines: list[dict[str, Any]] = []
+        towers: list[dict[str, Any]] = []
+        stations: list[dict[str, Any]] = []
+
+        for project in projects.get("items", []):
+            project_code = project.get("project_code")
+            if not project_code:
+                continue
+            detail = self.datahub.get_domain_project(
+                str(project_code),
+                include_work_points=False,
+                include_towers=True,
+                include_stations=True,
+                include_line_sections=True,
+                limit=10000,
+            )
+            for tower in detail.get("towers", []):
+                attrs = _safe_attributes(tower)
+                longitude = attrs.get("longitude")
+                latitude = attrs.get("latitude")
+                if longitude in (None, "", 0) or latitude in (None, "", 0):
+                    continue
+                towers.append(
+                    {
+                        "id": _entity_key(tower),
+                        "project_code": attrs.get("project_code") or project_code,
+                        "single_project_code": attrs.get("single_project_code"),
+                        "bidding_section_code": attrs.get("bidding_section_code"),
+                        "tower_no": attrs.get("tower_no"),
+                        "tower_sequence_no": attrs.get("tower_sequence_no"),
+                        "longitude": longitude,
+                        "latitude": latitude,
+                    }
+                )
+            for station in detail.get("stations", []):
+                attrs = _safe_attributes(station)
+                longitude = attrs.get("longitude")
+                latitude = attrs.get("latitude")
+                if longitude in (None, "", 0) or latitude in (None, "", 0):
+                    continue
+                stations.append(
+                    {
+                        "id": _entity_key(station),
+                        "project_code": attrs.get("project_code") or project_code,
+                        "single_project_code": attrs.get("single_project_code"),
+                        "name": attrs.get("station_name") or attrs.get("name") or attrs.get("single_project_name"),
+                        "longitude": longitude,
+                        "latitude": latitude,
+                    }
+                )
+            for line_section in detail.get("line_sections", []):
+                attrs = _safe_attributes(line_section)
+                key = _entity_key(line_section)
+                stats = line_section_stats.get(key, {})
+                lines.append(
+                    {
+                        "id": key,
+                        "line_section_key": key,
+                        "line_section_name": attrs.get("line_section_name"),
+                        "project_code": attrs.get("project_code") or project_code,
+                        "single_project_code": attrs.get("single_project_code"),
+                        "bidding_section_code": attrs.get("bidding_section_code"),
+                        "tower_count": stats.get("matched_tower_count")
+                        or stats.get("tower_sequence_count")
+                        or 0,
+                        "coords": attrs.get("coords") or [],
+                        "voltage_level": attrs.get("voltage_level"),
+                    }
+                )
+
         return {
-            "lines": skeleton.get("lines", []),
-            "towers": skeleton.get("towers", []),
-            "stations": skeleton.get("stations", []),
-            "metadata": skeleton.get("meta", {}),
+            "lines": lines,
+            "towers": towers,
+            "stations": stations,
+            "metadata": {
+                "source": "datahub_domain_api",
+                "projects_count": len(projects.get("items", [])),
+                "lines_count": len(lines),
+                "towers_count": len(towers),
+                "stations_count": len(stations),
+            },
         }
 
     def refresh_dates_view(self, *, force: bool = False) -> dict[str, Any]:
@@ -190,11 +278,18 @@ class MonitorReadModelService:
         )
 
     def _build_dates_view(self) -> dict[str, Any]:
-        dates = self.datahub.get_sandbox_dates()
+        projects = self.datahub.get_domain_projects(limit=1000, offset=0)
+        date_values = sorted(
+            {
+                str(item.get("latest_work_date"))
+                for item in projects.get("items", [])
+                if item.get("latest_work_date") not in (None, "")
+            }
+        )
         return {
-            "dates": dates.get("dates", []),
-            "latest_date": dates.get("latest_date"),
-            "count": dates.get("count", 0),
+            "dates": date_values,
+            "latest_date": date_values[-1] if date_values else None,
+            "count": len(date_values),
         }
 
     def refresh_daily_summary(self, *, date: str | None, force: bool = False) -> dict[str, Any]:
@@ -212,75 +307,90 @@ class MonitorReadModelService:
         )
 
     def _build_daily_summary_view(self, *, date: str | None) -> dict[str, Any]:
-        summary = self.datahub.get_sandbox_summary(date)
+        projects = self.datahub.get_domain_projects(limit=1000, offset=0)
+        latest_date = date or max(
+            (
+                str(item.get("latest_work_date"))
+                for item in projects.get("items", [])
+                if item.get("latest_work_date") not in (None, "")
+            ),
+            default=None,
+        )
+        work_points: list[dict[str, Any]] = []
+        for project in projects.get("items", []):
+            project_code = project.get("project_code")
+            if not project_code:
+                continue
+            detail = self.datahub.get_domain_project(
+                str(project_code),
+                date=latest_date,
+                include_work_points=True,
+                include_towers=False,
+                include_stations=False,
+                include_line_sections=False,
+                limit=10000,
+            )
+            for item in detail.get("work_points", []):
+                attrs = _safe_attributes(item)
+                work_date = attrs.get("work_date") or item.get("entity_date")
+                if latest_date and work_date not in (latest_date, None, ""):
+                    continue
+                work_points.append(
+                    {
+                        "id": _entity_key(item),
+                        "project_name": attrs.get("project_name") or project.get("project_name"),
+                        "project_code": attrs.get("project_code") or project_code,
+                        "longitude": attrs.get("longitude"),
+                        "latitude": attrs.get("latitude"),
+                        "person_count": attrs.get("person_count"),
+                        "risk_level": attrs.get("risk_level"),
+                        "work_status": attrs.get("work_status"),
+                        "voltage_level": attrs.get("voltage_level"),
+                        "city": attrs.get("city"),
+                        "work_date": work_date,
+                    }
+                )
         return {
-            "date": summary.get("meta", {}).get("date"),
-            "work_points": summary.get("work_points", []),
-            "summary": summary.get("meta", {}),
+            "date": latest_date,
+            "work_points": work_points,
+            "summary": {
+                "date": latest_date,
+                "work_points_count": len(work_points),
+                "source": "datahub_domain_api",
+            },
             "metadata": {
                 "requested_date": date,
             },
             # legacy shape for old backend callers
-            "total_points": summary.get("meta", {}).get("work_points_count", 0),
-            "data": summary.get("work_points", []),
+            "total_points": len(work_points),
+            "data": work_points,
         }
 
     def refresh_project_index(self, *, force: bool = False) -> dict[str, Any]:
-        skeleton = self.refresh_map_skeleton(force=force)
-        latest_summary = self.refresh_daily_summary(date=None, force=force)
+        domain_projects = self.refresh_domain_projects(force=force, limit=1000, offset=0)
         watermark = json.dumps(
             {
-                "skeleton": skeleton.get("source_watermark"),
-                "summary": latest_summary.get("source_watermark"),
+                "domain_projects": domain_projects.get("source_watermark"),
             },
             ensure_ascii=False,
             sort_keys=True,
         )
 
         def builder() -> dict[str, Any]:
-            project_index: dict[str, dict[str, Any]] = {}
-            for station in skeleton.get("stations", []):
-                project_code = station.get("project_code") or station.get("prj_code") or "unknown_project"
-                item = project_index.setdefault(
-                    project_code,
-                    {
-                        "project_code": project_code,
-                        "project_name": None,
-                        "tower_count": 0,
-                        "station_count": 0,
-                        "work_point_count": 0,
-                    },
-                )
-                item["station_count"] += 1
-            for tower in skeleton.get("towers", []):
-                project_code = tower.get("project_code") or "unknown_project"
-                item = project_index.setdefault(
-                    project_code,
-                    {
-                        "project_code": project_code,
-                        "project_name": None,
-                        "tower_count": 0,
-                        "station_count": 0,
-                        "work_point_count": 0,
-                    },
-                )
-                item["tower_count"] += 1
-            for work_point in latest_summary.get("work_points", []):
-                project_code = work_point.get("project_code") or "unknown_project"
-                item = project_index.setdefault(
-                    project_code,
-                    {
-                        "project_code": project_code,
-                        "project_name": None,
-                        "tower_count": 0,
-                        "station_count": 0,
-                        "work_point_count": 0,
-                    },
-                )
-                item["work_point_count"] += 1
-                item["project_name"] = item["project_name"] or work_point.get("project_name")
-
-            items = sorted(project_index.values(), key=lambda item: item["project_code"])
+            items = [
+                {
+                    "project_code": item.get("project_code"),
+                    "project_name": item.get("project_name"),
+                    "status": item.get("status"),
+                    "tower_count": item.get("tower_count", 0),
+                    "station_count": item.get("station_count", 0),
+                    "line_section_count": item.get("line_section_count", 0),
+                    "work_point_count": item.get("work_point_count", 0),
+                    "single_project_count": item.get("single_project_count", 0),
+                    "bidding_section_count": item.get("bidding_section_count", 0),
+                }
+                for item in domain_projects.get("projects", [])
+            ]
             self.store.clear_project_read_models()
             for item in items:
                 self.store.upsert_project_read_model(

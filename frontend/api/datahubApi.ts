@@ -1,4 +1,4 @@
-import { getApiConfig } from './config';
+import { get } from './client';
 
 export interface DataHubDatesResponse {
   dates: string[];
@@ -67,25 +67,8 @@ export interface DataHubMapSkeletonResponse {
 
 let skeletonCache: Promise<DataHubMapSkeletonResponse> | null = null;
 
-async function datahubGet<T>(path: string): Promise<T> {
-  const config = getApiConfig();
-  const response = await fetch(`${config.datahubBaseUrl}${path}`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    signal: AbortSignal.timeout(config.timeout),
-  });
-
-  if (!response.ok) {
-    throw new Error(`DataHub request failed: ${response.status} ${response.statusText}`);
-  }
-
-  return response.json() as Promise<T>;
-}
-
 export function fetchDataHubDates(): Promise<DataHubDatesResponse> {
-  return datahubGet<DataHubDatesResponse>('/api/v1/sandbox/dates');
+  return get<DataHubDatesResponse>('/api/map/dates');
 }
 
 export const fetchSandboxDates = fetchDataHubDates;
@@ -94,14 +77,14 @@ export function fetchDataHubMapSummary(
   date?: string
 ): Promise<DataHubMapSummaryResponse> {
   const query = date ? `?date=${encodeURIComponent(date)}` : '';
-  return datahubGet<DataHubMapSummaryResponse>(`/api/v1/sandbox/map/summary${query}`);
+  return get<DataHubMapSummaryResponse>(`/api/map/summary${query}`);
 }
 
 export const fetchSandboxSummary = fetchDataHubMapSummary;
 
 export function fetchDataHubMapSkeleton(): Promise<DataHubMapSkeletonResponse> {
   if (!skeletonCache) {
-    skeletonCache = datahubGet<DataHubMapSkeletonResponse>('/api/v1/sandbox/map/skeleton');
+    skeletonCache = get<DataHubMapSkeletonResponse>('/api/map/skeleton');
   }
   return skeletonCache;
 }

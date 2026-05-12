@@ -2,18 +2,12 @@
 
 ## 结论
 
-`backend/` 需要保留，但当前不再作为 DataHub 联调主链路的数据底座。
+`backend/` 需要保留，并作为 Monitor 的 BFF / 应用处理层。
 
-当前第一版链路是：
-
-```text
-DataHub sandbox API -> frontend
-```
-
-backend 后续应演进为：
+当前链路是：
 
 ```text
-DataHub API -> Monitor backend / BFF -> frontend
+DataHub Domain API -> Monitor backend / BFF -> frontend
 ```
 
 ## 保留原因
@@ -38,8 +32,8 @@ backend 当前不应重新承担：
 - DCP 登录。
 - DCP 页面采集。
 - downloader 调度。
-- SourceEvent ingestion。
-- raw_events 存储。
+- release ingestion。
+- DataHub raw layer 存储。
 - canonical_entities 存储。
 - normalizer。
 - DataHub checkpoint。
@@ -48,7 +42,7 @@ backend 当前不应重新承担：
 
 | 层 | 职责 |
 | --- | --- |
-| DataHub | 数据接入、raw_events、normalizer、canonical、sandbox API |
+| DataHub | command batch、ingestion、raw layer、normalizer、canonical、Domain API |
 | Monitor backend | BFF、用户态、应用规则、工单、履历、基建 online 机制 |
 | Monitor frontend | 地图、交互、可视化、操作入口 |
 
@@ -57,8 +51,8 @@ backend 当前不应重新承担：
 - 新能力优先判断属于 DataHub 还是 Monitor backend。
 - 只要涉及 DCP raw -> canonical，放 DataHub。
 - 只要涉及用户操作、组织角色、业务闭环，放 Monitor backend。
-- 前端只消费稳定 DTO，不直接依赖 DataHub 内部表结构。
+- 前端只消费 Monitor backend 稳定 DTO，不直接访问 DataHub 内部表结构、raw layer 或 downloader。
 
 ## 当前文档状态
 
-`backend/README.md` 已调整为 legacy / future BFF 说明，不再作为第一版 DataHub 联调主文档。旧 FastAPI + SQLite 数据底座说明已清理。
+`backend/README.md` 已调整为当前 BFF 说明。旧 FastAPI + SQLite 数据底座说明已清理。

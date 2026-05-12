@@ -47,64 +47,6 @@ def _mock_datahub_payload(path: str) -> dict:
             "overall_status": "ok",
             "reasons": [],
         }
-    if path == "/api/v1/sandbox/map/skeleton":
-        return {
-            "meta": {
-                "limit": 10000,
-                "stations_count": 1,
-                "towers_count": 1,
-                "truncated": False,
-            },
-            "lines": [],
-            "towers": [
-                {
-                    "id": "dcp:tower:S01:B01:G1",
-                    "single_project_code": "S01",
-                    "bidding_section_code": "B01",
-                    "tower_no": "G1",
-                    "longitude": 112.9,
-                    "latitude": 28.2,
-                }
-            ],
-            "stations": [
-                {
-                    "id": "dcp:station:S01",
-                    "project_code": "PRJ-001",
-                    "single_project_code": "S01",
-                    "longitude": 112.8,
-                    "latitude": 28.1,
-                }
-            ],
-        }
-    if path == "/api/v1/sandbox/dates":
-        return {
-            "dates": ["2026-05-07", "2026-05-08"],
-            "latest_date": "2026-05-08",
-            "count": 2,
-        }
-    if path == "/api/v1/sandbox/map/summary":
-        return {
-            "meta": {
-                "date": "2026-05-08",
-                "limit": 10000,
-                "work_points_count": 1,
-                "truncated": False,
-            },
-            "work_points": [
-                {
-                    "id": "dcp:work_point:2026-05-08:meeting-001",
-                    "project_name": "示例工程",
-                    "longitude": 112.7,
-                    "latitude": 28.0,
-                    "person_count": 10,
-                    "risk_level": "2",
-                    "work_status": "working",
-                    "voltage_level": "500kV",
-                    "city": "长沙",
-                    "work_date": "2026-05-08",
-                }
-            ],
-        }
     if path == "/api/v1/domain/projects":
         return {
             "items": [

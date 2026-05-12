@@ -37,15 +37,6 @@ class DataHubClient:
     def get_domain_health(self) -> dict:
         return self._get_json("/health/v1/domain")
 
-    def get_sandbox_skeleton(self) -> dict:
-        return self._get_json("/api/v1/sandbox/map/skeleton")
-
-    def get_sandbox_dates(self) -> dict:
-        return self._get_json("/api/v1/sandbox/dates")
-
-    def get_sandbox_summary(self, date: str | None = None) -> dict:
-        return self._get_json("/api/v1/sandbox/map/summary", {"date": date})
-
     def get_domain_projects(
         self,
         *,
