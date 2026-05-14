@@ -23,11 +23,19 @@ def _parse_timestamp(value: str | None) -> datetime | None:
 
 class MonitorCacheStore:
     def __init__(self, db_path: str | Path):
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path = str(db_path)
+        self._uri = raw_path.startswith("file:")
+        self._anchor_conn: sqlite3.Connection | None = None
+        if self._uri:
+            self.db_path = raw_path
+            if "mode=memory" in raw_path:
+                self._anchor_conn = sqlite3.connect(self.db_path, uri=True)
+        else:
+            self.db_path = Path(db_path)
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, uri=self._uri)
         conn.row_factory = sqlite3.Row
         return conn
 

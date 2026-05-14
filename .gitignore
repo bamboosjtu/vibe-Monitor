@@ -37,10 +37,22 @@ lerna-debug.log*
 # Testing
 coverage
 *.lcov
+**/.artifacts/
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite3-journal
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
 
 # Temporary files
 *.tmp
 *.temp
+tmp/
+uv-cache/
+pytest-tmp/
 .cache
 
 # Optional npm cache directory

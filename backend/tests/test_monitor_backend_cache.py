@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -10,6 +10,10 @@ from app.core.config import settings
 from app.datahub.client import DataHubClient, DataHubClientError
 from app.read_models.service import MonitorReadModelService
 from app.schemas.responses import ApiResponse
+
+
+def _artifact_db(name: str) -> str:
+    return f"file:monitor_cache_{name}_{uuid4().hex}?mode=memory&cache=shared"
 
 
 def _mock_datahub_payload(path: str) -> dict:
@@ -226,8 +230,8 @@ def _mock_datahub_payload(path: str) -> dict:
     raise AssertionError(f"unexpected path: {path}")
 
 
-def test_cache_store_set_get_and_clear(tmp_path: Path) -> None:
-    store = MonitorCacheStore(tmp_path / "monitor_cache.db")
+def test_cache_store_set_get_and_clear() -> None:
+    store = MonitorCacheStore(_artifact_db("cache-store"))
     store.init_schema()
     store.upsert_cache_entry(
         cache_key="k1",
@@ -247,11 +251,11 @@ def test_cache_store_set_get_and_clear(tmp_path: Path) -> None:
 
 
 def test_read_model_service_builds_views_and_project_index(
-    monkeypatch, tmp_path: Path
+    monkeypatch
 ) -> None:
     monkeypatch.setattr(DataHubClient, "_get_json", lambda self, path, query=None: _mock_datahub_payload(path))
     service = MonitorReadModelService(
-        store=MonitorCacheStore(tmp_path / "monitor_cache.db"),
+        store=MonitorCacheStore(_artifact_db("read-model")),
         datahub=DataHubClient(base_url="http://127.0.0.1:8000"),
         ttl_seconds=300,
     )
@@ -266,9 +270,9 @@ def test_read_model_service_builds_views_and_project_index(
 
 
 def test_read_model_service_uses_stale_cache_when_datahub_unavailable(
-    monkeypatch, tmp_path: Path
+    monkeypatch
 ) -> None:
-    store = MonitorCacheStore(tmp_path / "monitor_cache.db")
+    store = MonitorCacheStore(_artifact_db("stale-cache"))
     monkeypatch.setattr(DataHubClient, "_get_json", lambda self, path, query=None: _mock_datahub_payload(path))
     service = MonitorReadModelService(
         store=store,
@@ -287,9 +291,9 @@ def test_read_model_service_uses_stale_cache_when_datahub_unavailable(
     assert cached["stale"] is False
 
 
-def test_monitor_backend_api_endpoints(monkeypatch, tmp_path: Path) -> None:
+def test_monitor_backend_api_endpoints(monkeypatch) -> None:
     monkeypatch.setattr(main_module, "init_db", lambda: None)
-    monkeypatch.setattr(settings, "MONITOR_CACHE_DB", str(tmp_path / "monitor_cache.db"))
+    monkeypatch.setattr(settings, "MONITOR_CACHE_DB", str(_artifact_db("api-endpoints")))
     monkeypatch.setattr(DataHubClient, "_get_json", lambda self, path, query=None: _mock_datahub_payload(path))
 
     with TestClient(main_module.app) as client:
@@ -314,11 +318,11 @@ def test_monitor_backend_api_endpoints(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_domain_read_model_service_builds_project_and_section_views(
-    monkeypatch, tmp_path: Path
+    monkeypatch
 ) -> None:
     monkeypatch.setattr(DataHubClient, "_get_json", lambda self, path, query=None: _mock_datahub_payload(path))
     service = MonitorReadModelService(
-        store=MonitorCacheStore(tmp_path / "monitor_cache.db"),
+        store=MonitorCacheStore(_artifact_db("domain-read-model")),
         datahub=DataHubClient(base_url="http://127.0.0.1:8000"),
         ttl_seconds=300,
     )
@@ -349,7 +353,7 @@ def test_domain_read_model_service_builds_project_and_section_views(
 
 
 def test_refresh_domain_projects_does_not_fail_when_year_progress_fails(
-    monkeypatch, tmp_path: Path
+    monkeypatch
 ) -> None:
     def _mock(path: str) -> dict:
         if path == "/api/v1/domain/year-progress":
@@ -358,7 +362,7 @@ def test_refresh_domain_projects_does_not_fail_when_year_progress_fails(
 
     monkeypatch.setattr(DataHubClient, "_get_json", lambda self, path, query=None: _mock(path))
     service = MonitorReadModelService(
-        store=MonitorCacheStore(tmp_path / "monitor_cache.db"),
+        store=MonitorCacheStore(_artifact_db("partial-year-progress")),
         datahub=DataHubClient(base_url="http://127.0.0.1:8000"),
         ttl_seconds=300,
     )
@@ -370,9 +374,9 @@ def test_refresh_domain_projects_does_not_fail_when_year_progress_fails(
 
 
 def test_domain_read_model_service_uses_stale_cache_when_domain_datahub_unavailable(
-    monkeypatch, tmp_path: Path
+    monkeypatch
 ) -> None:
-    store = MonitorCacheStore(tmp_path / "monitor_cache.db")
+    store = MonitorCacheStore(_artifact_db("domain-stale-cache"))
     monkeypatch.setattr(DataHubClient, "_get_json", lambda self, path, query=None: _mock_datahub_payload(path))
     service = MonitorReadModelService(
         store=store,
@@ -391,9 +395,9 @@ def test_domain_read_model_service_uses_stale_cache_when_domain_datahub_unavaila
     assert cached["stale"] is False
 
 
-def test_monitor_backend_domain_api_endpoints(monkeypatch, tmp_path: Path) -> None:
+def test_monitor_backend_domain_api_endpoints(monkeypatch) -> None:
     monkeypatch.setattr(main_module, "init_db", lambda: None)
-    monkeypatch.setattr(settings, "MONITOR_CACHE_DB", str(tmp_path / "monitor_cache.db"))
+    monkeypatch.setattr(settings, "MONITOR_CACHE_DB", str(_artifact_db("domain-api-endpoints")))
     monkeypatch.setattr(DataHubClient, "_get_json", lambda self, path, query=None: _mock_datahub_payload(path))
 
     with TestClient(main_module.app) as client:
@@ -418,10 +422,10 @@ def test_monitor_backend_domain_api_endpoints(monkeypatch, tmp_path: Path) -> No
 
 
 def test_monitor_backend_domain_refresh_scope_supports_partial_success(
-    monkeypatch, tmp_path: Path
+    monkeypatch
 ) -> None:
     monkeypatch.setattr(main_module, "init_db", lambda: None)
-    monkeypatch.setattr(settings, "MONITOR_CACHE_DB", str(tmp_path / "monitor_cache.db"))
+    monkeypatch.setattr(settings, "MONITOR_CACHE_DB", str(_artifact_db("domain-refresh-scope")))
 
     def _mock(path: str) -> dict:
         if path == "/api/v1/domain/year-progress":
@@ -444,9 +448,9 @@ def test_monitor_backend_domain_refresh_scope_supports_partial_success(
     assert data["errors"]
 
 
-def test_monitor_backend_uses_extended_datahub_timeout_by_default(tmp_path: Path) -> None:
+def test_monitor_backend_uses_extended_datahub_timeout_by_default() -> None:
     service = MonitorReadModelService(
-        store=MonitorCacheStore(tmp_path / "monitor_cache.db")
+        store=MonitorCacheStore(_artifact_db("timeout-default"))
     )
 
     assert service.datahub.timeout_seconds == settings.DATAHUB_TIMEOUT_SECONDS
