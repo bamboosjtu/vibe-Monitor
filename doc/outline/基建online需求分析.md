@@ -706,7 +706,7 @@ P1聚焦“先把机制跑通”，优先建设以下能力：
 | --------------------- | -------- | ------------------------------------------------ |
 | work_order_id         | string   | 工单ID                                           |
 | order_type            | enum     | 督战/支援/整改/请示/调整/复工                    |
-| source_event_id       | string   | 来源事件                                         |
+| raw_event_id          | string   | 来源原始记录                                     |
 | project_id            | string   | 项目ID                                           |
 | creator_id            | string   | 发起人                                           |
 | assignee_type         | enum     | 战区/督军府/军师/现场督军/军团/作战军/个人       |

@@ -52,7 +52,7 @@ export function FilterPanel() {
   const [unresolvedCount, setUnresolvedCount] = useState<number | null>(null);
   
   useEffect(() => {
-    if (dataSource === 'datahub' || dataSource === 'monitor_backend') {
+    if (dataSource === 'monitor_backend') {
       setUnresolvedCount(null);
       return;
     }

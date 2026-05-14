@@ -24,7 +24,7 @@ vibe-downloader
 `vibe-Monitor` 不负责：
 
 - DCP 登录、分页、采集。
-- 解析 DCP Envelope 或 SourceEvent。
+- 解析 DCP Envelope 或 raw_event 存储结构。
 - 直接访问 DataHub raw layer 或 downloader。
 - 依赖 DCP raw 字段名。
 - DataHub canonical normalization。
@@ -47,14 +47,13 @@ vibe-downloader
 
 ## 数据源模式
 
-前端支持四类模式：
+前端支持三类模式：
 
 | 模式 | 环境变量 | 用途 |
 | --- | --- | --- |
 | `monitor_backend` | `VITE_DATA_SOURCE=monitor_backend` | 推荐默认模式，调用 Monitor backend BFF/cache |
 | `datahub` | `VITE_DATA_SOURCE=datahub` | 兼容别名，仍通过 Monitor backend BFF 读取数据 |
 | `local` | `VITE_DATA_SOURCE=local` | 本地 JSON fallback / demo |
-| `api` / `legacy-api` | 旧 backend API | 兼容旧流程，不作为当前主链路 |
 
 Monitor backend mode 使用：
 

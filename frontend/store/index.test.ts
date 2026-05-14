@@ -241,8 +241,8 @@ describe('App Store', () => {
     });
   });
 
-  describe('datahub mode', () => {
-    it('should load dates and latest work points from DataHub', async () => {
+  describe('monitor backend mode', () => {
+    it('should load dates and latest work points from Monitor backend', async () => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.endsWith('/api/map/dates')) {
@@ -290,7 +290,7 @@ describe('App Store', () => {
       vi.stubGlobal('fetch', fetchMock);
 
       const { setDataSource, loadFromDataHub } = useAppStore.getState();
-      setDataSource('datahub');
+      setDataSource('monitor_backend');
       await loadFromDataHub();
 
       const state = useAppStore.getState();
@@ -302,7 +302,7 @@ describe('App Store', () => {
       expect('raw' in state.normalizedData[0]).toBe(false);
     });
 
-    it('should reload work points for selected DataHub date', async () => {
+    it('should reload work points for selected Monitor backend date', async () => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.endsWith('/api/map/summary?date=2026-05-03')) {
@@ -338,7 +338,7 @@ describe('App Store', () => {
       vi.stubGlobal('fetch', fetchMock);
 
       const { setDataSource, loadDataByDate } = useAppStore.getState();
-      setDataSource('datahub');
+      setDataSource('monitor_backend');
       await loadDataByDate('2026-05-03');
 
       const state = useAppStore.getState();
@@ -722,7 +722,7 @@ describe('App Store', () => {
       } as any);
 
       useAppStore.setState({
-        dataSource: 'datahub',
+        dataSource: 'monitor_backend',
         selectedProjectCode: 'PRJ-001',
       });
 

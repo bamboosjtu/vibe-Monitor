@@ -32,7 +32,7 @@ export function ProjectSelector() {
   } = useAppStore();
   const [keyword, setKeyword] = useState(projectSearchKeyword);
 
-  const domainEnabled = dataSource === 'monitor_backend' || dataSource === 'datahub';
+  const domainEnabled = dataSource === 'monitor_backend';
 
   useEffect(() => {
     setKeyword(projectSearchKeyword);

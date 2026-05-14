@@ -54,15 +54,8 @@ export function useDataLoader() {
 
       try {
         // 根据数据源决定加载方式
-        if (dataSource === 'legacy-api') {
-          // 从 legacy backend API 加载数据
-          await loadFromApi();
-          setIsInitialLoading(false);
-          return;
-        }
-
-        if (dataSource === 'datahub' || dataSource === 'monitor_backend') {
-          // 从 DataHub / Monitor backend 加载数据
+        if (dataSource === 'monitor_backend') {
+          // 从 Monitor backend 加载数据；backend 再读取 DataHub Domain API。
           await loadFromDataHub();
           setIsInitialLoading(false);
           return;

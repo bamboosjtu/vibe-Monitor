@@ -1,5 +1,3 @@
-import { get } from './client';
-
 export interface DataHubDatesResponse {
   dates: string[];
   latest_date: string | null;
@@ -63,34 +61,4 @@ export interface DataHubMapSkeletonResponse {
   stations: DataHubStation[];
   towers: DataHubTower[];
   lines: [];
-}
-
-let skeletonCache: Promise<DataHubMapSkeletonResponse> | null = null;
-
-export function fetchDataHubDates(): Promise<DataHubDatesResponse> {
-  return get<DataHubDatesResponse>('/api/map/dates');
-}
-
-export const fetchSandboxDates = fetchDataHubDates;
-
-export function fetchDataHubMapSummary(
-  date?: string
-): Promise<DataHubMapSummaryResponse> {
-  const query = date ? `?date=${encodeURIComponent(date)}` : '';
-  return get<DataHubMapSummaryResponse>(`/api/map/summary${query}`);
-}
-
-export const fetchSandboxSummary = fetchDataHubMapSummary;
-
-export function fetchDataHubMapSkeleton(): Promise<DataHubMapSkeletonResponse> {
-  if (!skeletonCache) {
-    skeletonCache = get<DataHubMapSkeletonResponse>('/api/map/skeleton');
-  }
-  return skeletonCache;
-}
-
-export const fetchSandboxSkeleton = fetchDataHubMapSkeleton;
-
-export function clearDataHubSkeletonCache(): void {
-  skeletonCache = null;
 }

@@ -11,8 +11,6 @@ import {
   adaptDataHubMapSummary,
   adaptDataHubWorkPoint,
   adaptMapSummary,
-  fetchDataHubDates,
-  fetchDataHubMapSummary,
   fetchMonitorBackendDates,
   fetchMonitorBackendMapSummary,
   getSummaryDate,
@@ -21,7 +19,7 @@ import {
   getMapSummary,
   setDataSource as setApiDataSource,
 } from '@/api';
-import type { DataSourceMode } from '@/api/config';
+import { normalizeDataSource, type DataSourceMode } from '@/api/config';
 import {
   fetchDomainLineSectionDetail,
   fetchDomainLineSections,
@@ -435,11 +433,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       let resolvedDate = date;
 
-      if (dataSource === 'datahub' || dataSource === 'monitor_backend') {
-        const remoteSummary =
-          dataSource === 'monitor_backend'
-            ? await fetchMonitorBackendMapSummary(date)
-            : await fetchDataHubMapSummary(date);
+      if (dataSource === 'monitor_backend') {
+        const remoteSummary = await fetchMonitorBackendMapSummary(date);
         const workPoints = getSummaryWorkPoints(remoteSummary);
         const normalizedData = adaptDataHubMapSummary(remoteSummary);
         resolvedDate = getSummaryDate(remoteSummary, date) ?? date;
@@ -489,8 +484,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   dataSource: getApiConfig().source,
   setDataSource: source => {
-    setApiDataSource(source);
-    set({ dataSource: source });
+    const normalizedSource = normalizeDataSource(source);
+    setApiDataSource(normalizedSource);
+    set({ dataSource: normalizedSource });
   },
 
   loadFromApi: async () => {
@@ -543,14 +539,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     startLoading();
 
     try {
-      const remoteDates =
-        get().dataSource === 'monitor_backend'
-          ? await fetchMonitorBackendDates()
-          : await fetchDataHubDates();
-      const remoteSummaryFetcher =
-        get().dataSource === 'monitor_backend'
-          ? fetchMonitorBackendMapSummary
-          : fetchDataHubMapSummary;
+      const remoteDates = await fetchMonitorBackendDates();
+      const remoteSummaryFetcher = fetchMonitorBackendMapSummary;
       const dates = [...remoteDates.dates].sort();
       setAvailableDates(dates);
 
