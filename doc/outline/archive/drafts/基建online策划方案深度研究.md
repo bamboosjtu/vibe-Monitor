@@ -530,7 +530,7 @@ P1阶段遵循MVP边界：不引入大规模复杂特效，优先“所见即所
 |---|---:|---:|---|
 | work_order_id | string | Y | 工单ID |
 | project_id | string | Y | 项目 |
-| source_event_id | string | N | 来源事件 |
+| raw_event_id | string | N | 来源原始记录 |
 | order_type | enum | Y | 进度督办/整改/停工/复工/资源协调/变更申请/提级请示… |
 | priority | enum | Y | P0/P1/P2/P3 |
 | severity | enum | Y | S1-S4 |
