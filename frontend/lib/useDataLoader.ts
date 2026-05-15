@@ -27,7 +27,6 @@ export function useDataLoader() {
     currentDate,
     setCurrentDate,
     dataSource,
-    loadFromApi,
     loadFromDataHub,
   } = useAppStore();
 
@@ -96,7 +95,7 @@ export function useDataLoader() {
     };
 
     loadInitialData();
-  }, [pageStatus, startLoading, loadSuccess, loadError, setAvailableDates, setCurrentDate, dataSource, loadFromApi, loadFromDataHub]);
+  }, [pageStatus, startLoading, loadSuccess, loadError, setAvailableDates, setCurrentDate, dataSource, loadFromDataHub]);
 
   return { 
     pageStatus,

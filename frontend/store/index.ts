@@ -10,13 +10,11 @@ import { applyFilters, DEFAULT_FILTER_STATE } from '@/lib/filter';
 import {
   adaptDataHubMapSummary,
   adaptDataHubWorkPoint,
-  adaptMapSummary,
   fetchMonitorBackendDates,
   fetchMonitorBackendMapSummary,
   getSummaryDate,
   getSummaryWorkPoints,
   getApiConfig,
-  getMapSummary,
   setDataSource as setApiDataSource,
 } from '@/api';
 import { normalizeDataSource, type DataSourceMode } from '@/api/config';
@@ -211,7 +209,6 @@ export interface AppState {
   resetData: () => void;
 
   loadDataByDate: (date: string, isInitialLoad?: boolean) => Promise<void>;
-  loadFromApi: () => Promise<void>;
   loadFromDataHub: () => Promise<void>;
   dataSource: DataSourceMode;
   setDataSource: (source: DataSourceMode) => void;
@@ -487,50 +484,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const normalizedSource = normalizeDataSource(source);
     setApiDataSource(normalizedSource);
     set({ dataSource: normalizedSource });
-  },
-
-  loadFromApi: async () => {
-    const { loadSuccess, loadError, startLoading, setAvailableDates, setCurrentDate } = get();
-
-    startLoading();
-
-    try {
-      const [{ loadDateManifest }, summary] = await Promise.all([
-        import('@/lib/dateDataLoader'),
-        getMapSummary(),
-      ]);
-
-      const manifest = await loadDateManifest();
-      setAvailableDates(manifest.dates);
-
-      const latestDate = manifest.dates[manifest.dates.length - 1] || null;
-      if (latestDate) {
-        setCurrentDate(latestDate);
-      }
-
-      const normalizedData = adaptMapSummary(summary.data);
-
-      loadSuccess({
-        rawData: null as any,
-        normalizedData,
-        stats: {
-          totalRawRecords: normalizedData.length,
-          validCoordinateRecords: normalizedData.length,
-          filteredRecords: 0,
-          filterReasons: {
-            emptyCoordinates: 0,
-            invalidCoordinates: 0,
-            outOfBounds: 0,
-            zeroCoordinates: 0,
-          },
-        },
-        date: latestDate ?? undefined,
-      });
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'API 数据加载失败';
-      loadError(errorMessage);
-      console.error('[API Load Error]', err);
-    }
   },
 
   loadFromDataHub: async () => {

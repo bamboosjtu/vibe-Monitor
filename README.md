@@ -47,12 +47,11 @@ vibe-downloader
 
 ## 数据源模式
 
-前端支持三类模式：
+前端支持两类模式：
 
 | 模式 | 环境变量 | 用途 |
 | --- | --- | --- |
 | `monitor_backend` | `VITE_DATA_SOURCE=monitor_backend` | 推荐默认模式，调用 Monitor backend BFF/cache |
-| `datahub` | `VITE_DATA_SOURCE=datahub` | 兼容别名，仍通过 Monitor backend BFF 读取数据 |
 | `local` | `VITE_DATA_SOURCE=local` | 本地 JSON fallback / demo |
 
 Monitor backend mode 使用：
@@ -116,7 +115,7 @@ npm run dev
 
 约束：
 
-- backend 不应复制 DataHub 的 raw_events / canonical_entities 存储职责。
+- backend 不应复制 DataHub 的 raw_events / typed canonical store 存储职责。
 - backend 不应重新实现 DCP 采集、调度、checkpoint。
 - backend 如接入数据，只消费 DataHub Domain API 或 health API。
 

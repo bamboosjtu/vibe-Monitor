@@ -1,5 +1,5 @@
-/** API 数据源类型. `datahub` is accepted only as a compatibility alias. */
-export type DataSourceMode = 'monitor_backend' | 'datahub' | 'local'
+/** API 数据源类型. */
+export type DataSourceMode = 'monitor_backend' | 'local'
 
 export const DATA_SOURCE: DataSourceMode =
   (import.meta.env.VITE_DATA_SOURCE as DataSourceMode | undefined) ?? 'monitor_backend'
@@ -65,9 +65,6 @@ export function setDataSource(source: DataSourceMode): void {
 }
 
 export function normalizeDataSource(source: DataSourceMode | undefined): DataSourceMode {
-  if (source === 'datahub') {
-    return 'monitor_backend';
-  }
   return source && ['monitor_backend', 'local'].includes(source)
     ? source
     : 'monitor_backend';

@@ -3,7 +3,6 @@ import {
   fetchDomainLineSectionDetail,
   fetchDomainProjects,
 } from './domainApi';
-import { normalizeDataSource } from './config';
 
 describe('domainApi', () => {
   afterEach(() => {
@@ -88,9 +87,5 @@ describe('domainApi', () => {
       ),
       expect.any(Object),
     );
-  });
-
-  it('normalizes datahub source alias to monitor_backend', () => {
-    expect(normalizeDataSource('datahub')).toBe('monitor_backend');
   });
 });

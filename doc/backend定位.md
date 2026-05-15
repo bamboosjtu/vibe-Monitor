@@ -34,7 +34,7 @@ backend 当前不应重新承担：
 - downloader 调度。
 - release ingestion。
 - DataHub raw layer 存储。
-- canonical_entities 存储。
+- typed canonical store 存储。
 - normalizer。
 - DataHub checkpoint。
 

@@ -1,9 +1,6 @@
 # vibe-Monitor backend
 
-`backend/` 现在同时承担两层职责：
-
-- 保留 legacy API / 旧 SQLite 数据底座。
-- 新增 Monitor 专属 BFF / Read Model / Cache 层，面向 `vibe-DataCollectorHub`。
+`backend/` 当前承担 Monitor 专属 BFF / Read Model / Cache 职责，面向 `vibe-DataCollectorHub`。
 
 当前推荐链路：
 
@@ -13,13 +10,11 @@ vibe-DataCollectorHub Domain/health API -> vibe-Monitor backend -> frontend
 
 ## 当前状态
 
-历史上 backend 是 FastAPI + SQLite + SQLModel + Alembic 数据底座，提供过导入、bootstrap、map summary、map skeleton 等 API。
-
 数据治理主职责已经转移到 `vibe-DataCollectorHub`：
 
 - release ingestion and raw layer storage。
 - normalizer。
-- canonical_entities。
+- typed canonical store。
 - Domain API。
 
 backend 不应复制这些事实层职责；它现在只做消费侧 read model、缓存和 Monitor DTO 适配。
@@ -43,7 +38,7 @@ backend 不应实现：
 - DCP 页面采集。
 - downloader 调度。
 - release ingestion。
-- DataHub raw layer / canonical_entities 主存储。
+- DataHub raw layer / typed canonical store 主存储。
 - DataHub normalizer。
 - DataHub checkpoint。
 
@@ -118,6 +113,4 @@ uv run pytest tests\test_monitor_backend_cache.py
 
 不要为了恢复旧测试而把 DataHub 已承担的数据治理职责搬回 Monitor backend。
 
-## 旧文档
-
-旧 backend 数据底座说明已不再作为当前主文档。相关历史上下文已清理。
+旧 backend 数据底座说明不再作为当前实现依据。
